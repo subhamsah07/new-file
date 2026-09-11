@@ -212,12 +212,12 @@ export const AdminRequests: React.FC = () => {
             <table className="w-full text-left text-xs text-slate-600">
               <thead className="bg-slate-50 text-slate-500 font-semibold border-b border-slate-200">
                 <tr>
-                  <th className="py-3 px-4">Token</th>
+                  <th className="py-3 px-4">Token & Date</th>
                   <th className="py-3 px-4">Farmer Details</th>
                   <th className="py-3 px-4">Procurement Centre</th>
                   <th className="py-3 px-4">Crop & Quantity</th>
-                  <th className="py-3 px-4">Assigned Slot</th>
-                  <th className="py-3 px-4">Status</th>
+                  <th className="py-3 px-4">Procurement Status</th>
+                  <th className="py-3 px-4">Payment Status</th>
                   <th className="py-3 px-4 text-right">Action</th>
                 </tr>
               </thead>
@@ -229,7 +229,10 @@ export const AdminRequests: React.FC = () => {
                         {req.token}
                       </div>
                       <div className="text-[10px] text-slate-400">
-                        {new Date(req.createdAt).toLocaleDateString()}
+                        {new Date(req.createdAt).toLocaleString(undefined, {
+                          dateStyle: 'short',
+                          timeStyle: 'short',
+                        })}
                       </div>
                     </td>
 
@@ -254,32 +257,48 @@ export const AdminRequests: React.FC = () => {
                     </td>
 
                     <td className="py-3.5 px-4">
-                      {req.assignedDate ? (
-                        <div>
-                          <div className="font-medium text-slate-800">{req.assignedDate}</div>
-                          <div className="text-[11px] text-slate-500">
-                            {req.assignedStartTime ? `${req.assignedStartTime.slice(0, 5)} - ${req.assignedEndTime?.slice(0, 5)}` : 'Assigned'}
-                          </div>
-                        </div>
-                      ) : (
-                        <span className="text-slate-400 italic">Pending Assignment</span>
-                      )}
-                    </td>
-
-                    <td className="py-3.5 px-4">
                       <span
                         className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold uppercase ${
-                          req.bookingStatus === 'completed'
+                          req.workflowStatus === 'payment_completed' || req.workflowStatus === 'procurement_completed'
                             ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                            : req.bookingStatus === 'in_progress'
+                            : req.workflowStatus === 'weight_rate_verification' || req.workflowStatus === 'payment_processing'
                             ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                            : req.workflowStatus === 'document_verification' || req.workflowStatus === 'qr_verified'
+                            ? 'bg-purple-50 text-purple-700 border border-purple-200'
                             : req.bookingStatus === 'cancelled'
                             ? 'bg-red-50 text-red-700 border border-red-200'
                             : 'bg-amber-50 text-amber-700 border border-amber-200'
                         }`}
                       >
-                        {req.bookingStatus}
+                        {req.workflowStatus.replace(/_/g, ' ')}
                       </span>
+                    </td>
+
+                    <td className="py-3.5 px-4">
+                      {req.paymentStatus ? (
+                        <div>
+                          <span
+                            className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold uppercase ${
+                              req.paymentStatus === 'completed'
+                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                : req.paymentStatus === 'processing'
+                                ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                                : req.paymentStatus === 'failed'
+                                ? 'bg-red-50 text-red-700 border border-red-200'
+                                : 'bg-amber-50 text-amber-700 border border-amber-200'
+                            }`}
+                          >
+                            {req.paymentStatus}
+                          </span>
+                          {req.paymentAmount != null && (
+                            <div className="text-[10px] font-semibold text-slate-700 mt-0.5">
+                              ₹{req.paymentAmount.toLocaleString('en-IN')}
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-[11px] text-slate-400 italic">Not generated</span>
+                      )}
                     </td>
 
                     <td className="py-3.5 px-4 text-right">

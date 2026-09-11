@@ -2,7 +2,6 @@ import * as React from 'react';
 import { Link } from 'react-router-dom';
 import {
   CalendarPlus,
-  Compass,
   QrCode,
   Activity,
   CheckCircle2,
@@ -11,553 +10,760 @@ import {
   ArrowRight,
   TrendingUp,
   CreditCard,
-  Phone,
-  HelpCircle,
-  AlertTriangle,
-  ChevronRight,
-  FileCheck2,
-  Scale
+  ChevronDown,
+  ChevronUp,
+  Mail,
+  Truck,
+  Building2,
+  UserCheck,
+  Scale,
+  Zap,
+  ArrowUpRight
 } from 'lucide-react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
 import { Navbar } from '../components/layout/Navbar';
 import { Footer } from '../components/layout/Footer';
-import { Button } from '../components/ui/Button';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/Card';
-import { Badge } from '../components/ui/Badge';
 
 export const Home: React.FC = () => {
   const { t } = useTranslation();
 
-  const workflowSteps = [
+  // Day / Night Theme Management
+  const [darkMode, setDarkMode] = React.useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      const savedTheme = localStorage.getItem('smartprocure_theme');
+      if (savedTheme) {
+        return savedTheme === 'dark';
+      }
+      return document.documentElement.classList.contains('dark');
+    }
+    return false;
+  });
+
+  React.useEffect(() => {
+    if (darkMode) {
+      document.documentElement.classList.add('dark');
+      localStorage.setItem('smartprocure_theme', 'dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+      localStorage.setItem('smartprocure_theme', 'light');
+    }
+  }, [darkMode]);
+
+  const toggleTheme = () => {
+    setDarkMode((prev) => !prev);
+  };
+
+  // FAQ Accordion State
+  const [openFaq, setOpenFaq] = React.useState<number | null>(0);
+
+  // 8-step visual journey (with warm orange & yellow theme)
+  const farmerJourneySteps = [
     {
-      step: '01',
-      title: 'Farmer Registration',
-      hindi: 'किसान पंजीकरण',
-      desc: 'Verify mobile & email, register verified bank account for direct benefit credit.',
-      icon: ShieldCheck,
+      num: 1,
+      title: t('landing.step1Title', 'Registration'),
+      desc: t('landing.step1Desc', 'Verify mobile number and link verified bank account.'),
+      icon: UserCheck,
     },
     {
-      step: '02',
-      title: 'Find Procurement Centre',
-      hindi: 'निकटतम खरीद केंद्र',
-      desc: 'Discover mandis with real-time intake capacity, current wait velocity, and operational status.',
-      icon: Compass,
+      num: 2,
+      title: t('landing.step2Title', 'Select Centre & Commodity'),
+      desc: t('landing.step2Desc', 'Choose nearest mandi and specify expected crop quantity.'),
+      icon: Building2,
     },
     {
-      step: '03',
-      title: 'Smart Slot Allocation',
-      hindi: 'स्मार्ट स्लॉट आवंटन',
-      desc: 'Intelligent scheduling algorithm factors in daily mandi capacity and 14:00–15:00 lunch break.',
+      num: 3,
+      title: t('landing.step3Title', 'Book Appointment'),
+      desc: t('landing.step3Desc', 'Pick your preferred delivery date with automated slot allocation.'),
       icon: CalendarPlus,
     },
     {
-      step: '04',
-      title: 'Receive Secure Token',
-      hindi: 'सुरक्षित 6-अंकीय टोकन',
-      desc: 'Receive random 6-character identifier (e.g. SP7K4Q) and opaque QR pass without sensitive info.',
+      num: 4,
+      title: t('landing.step4Title', 'Receive Token & QR'),
+      desc: t('landing.step4Desc', 'Get digital gate pass with allocated arrival window and QR pass.'),
       icon: QrCode,
     },
     {
-      step: '05',
-      title: 'Track Live Queue & ETA',
-      hindi: 'लाइव कतार एवं आगमन समय',
-      desc: 'Track queue position in real time. Dynamic ETA updates tell you exactly when to leave home.',
+      num: 5,
+      title: t('landing.step5Title', 'Arrive at Centre'),
+      desc: t('landing.step5Desc', 'Report to the mandi weighbridge at your assigned time window.'),
+      icon: Truck,
+    },
+    {
+      num: 6,
+      title: t('landing.step6Title', 'Live Queue Tracking'),
+      desc: t('landing.step6Desc', 'Monitor real-time position, velocity, and vehicles ahead.'),
       icon: Activity,
     },
     {
-      step: '06',
-      title: 'Procurement Inspection',
-      hindi: 'खरीद एवं वजन सत्यापन',
-      desc: 'Transparent weighbridge gross/tare logging and instant J-Form receipt generation.',
+      num: 7,
+      title: t('landing.step7Title', 'Procurement Completed'),
+      desc: t('landing.step7Desc', 'Digital gross/tare weight logging and immediate J-Form slip.'),
       icon: Scale,
     },
     {
-      step: '07',
-      title: 'Direct Benefit Payment',
-      hindi: 'सीधा बैंक खाता भुगतान',
-      desc: 'Direct Benefit Transfer (DBT) credit tracked end-to-end to your verified bank account.',
+      num: 8,
+      title: t('landing.step8Title', 'Track Payment'),
+      desc: t('landing.step8Desc', 'Direct Benefit Transfer (DBT) directly into your bank account.'),
       icon: CreditCard,
     },
   ];
 
-  const whyPoints = [
+  // Exactly 6-block Process Flowchart
+  const processFlowSteps = [
     {
-      title: 'Zero Wastage of Waiting Time',
-      desc: 'Mandi waiting times drop from 14+ hours to under 45 minutes. Arrive when your turn is scheduled.',
+      stepNumber: '01',
+      title: t('landing.flowBook', 'Slot Booking'),
+      desc: 'Choose your crop, quantity, and convenient delivery date.',
+      icon: CalendarPlus,
+      colorClass: 'bg-blue-500 text-white',
+      badgeBg: 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300 border-blue-200 dark:border-blue-800',
+      glowBorder: 'hover:border-blue-400 dark:hover:border-blue-600',
+    },
+    {
+      stepNumber: '02',
+      title: t('landing.flowScheduling', 'Smart Scheduling'),
+      desc: 'Dynamic algorithm calculates gate window to prevent overcrowding.',
+      icon: Zap,
+      colorClass: 'bg-violet-500 text-white',
+      badgeBg: 'bg-violet-100 text-violet-800 dark:bg-violet-950 dark:text-violet-300 border-violet-200 dark:border-violet-800',
+      glowBorder: 'hover:border-violet-400 dark:hover:border-violet-600',
+    },
+    {
+      stepNumber: '03',
+      title: t('landing.flowToken', 'Digital Token'),
+      desc: 'Instant 6-digit gate code and secure QR pass delivered to phone.',
+      icon: QrCode,
+      colorClass: 'bg-amber-500 text-white',
+      badgeBg: 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border-amber-200 dark:border-amber-800',
+      glowBorder: 'hover:border-amber-400 dark:hover:border-amber-600',
+    },
+    {
+      stepNumber: '04',
+      title: t('landing.flowCheckIn', 'Mandi Check-In'),
+      desc: 'Seamless entry scan at weighbridge gate without overnight waiting.',
+      icon: Truck,
+      colorClass: 'bg-emerald-500 text-white',
+      badgeBg: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800',
+      glowBorder: 'hover:border-emerald-400 dark:hover:border-emerald-600',
+    },
+    {
+      stepNumber: '05',
+      title: t('landing.flowProcurement', 'Weighing & Quality'),
+      desc: 'Precise electronic scale reading, moisture test, and digital J-Form.',
+      icon: Scale,
+      colorClass: 'bg-cyan-500 text-white',
+      badgeBg: 'bg-cyan-100 text-cyan-800 dark:bg-cyan-950 dark:text-cyan-300 border-cyan-200 dark:border-cyan-800',
+      glowBorder: 'hover:border-cyan-400 dark:hover:border-cyan-600',
+    },
+    {
+      stepNumber: '06',
+      title: t('landing.flowPayment', 'Direct Bank Payout'),
+      desc: 'MSP transfer deposited directly via DBT into verified account.',
+      icon: CreditCard,
+      colorClass: 'bg-rose-500 text-white',
+      badgeBg: 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300 border-rose-200 dark:border-rose-800',
+      glowBorder: 'hover:border-rose-400 dark:hover:border-rose-600',
+    },
+  ];
+
+  // Core Benefits (Expanded to exactly 6 blocks for an even 3x2 grid, each with a colorful logo)
+  const benefits = [
+    {
+      title: t('landing.benefit1Title', 'Reduced Waiting Time'),
+      desc: t(
+        'landing.benefit1Desc',
+        'Eliminate 14+ hour overnight tractor queue-ups. Arrive right when the weighbridge is ready for you.'
+      ),
       icon: Clock,
       stat: '75% Faster',
+      iconBg: 'bg-amber-100 dark:bg-amber-950/70 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-800',
+      statColor: 'text-amber-600 dark:text-amber-400',
     },
     {
-      title: 'Transparent Queue Intelligence',
-      desc: 'No manual favoritism or arbitrary queue jumping. Every token is processed in verified order.',
+      title: t('landing.benefit2Title', 'Transparent Queue'),
+      desc: t(
+        'landing.benefit2Desc',
+        'Algorithmic token sequencing prevents queue jumping, middlemen bias, and arbitrary delays.'
+      ),
       icon: ShieldCheck,
-      stat: '100% Trackable',
+      stat: '100% Fair',
+      iconBg: 'bg-emerald-100 dark:bg-emerald-950/70 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800',
+      statColor: 'text-emerald-600 dark:text-emerald-400',
     },
     {
-      title: 'Dynamic ETA That Responds to Mandi Reality',
-      desc: 'If processing at a mandi slows down, your expected arrival time automatically shifts back.',
+      title: t('landing.benefit3Title', 'Real-Time Updates'),
+      desc: t(
+        'landing.benefit3Desc',
+        'Live queue tracking dynamically recalculates your ETA based on active mandi unloading speed.'
+      ),
       icon: TrendingUp,
-      stat: 'Adaptive ETA',
+      stat: 'Live ETA',
+      iconBg: 'bg-blue-100 dark:bg-blue-950/70 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-800',
+      statColor: 'text-blue-600 dark:text-blue-400',
     },
     {
-      title: 'Direct Benefit Payment Transparency',
-      desc: 'Track electronic weighbridge slip to treasury fund clearance with instant status notifications.',
+      title: t('landing.benefit4Title', 'Hassle-Free Procurement'),
+      desc: t(
+        'landing.benefit4Desc',
+        'Single digital pass replaces paper tokens. Weight logs and J-Forms generated instantly on completion.'
+      ),
+      icon: CheckCircle2,
+      stat: 'Paperless',
+      iconBg: 'bg-violet-100 dark:bg-violet-950/70 text-violet-600 dark:text-violet-400 border border-violet-200 dark:border-violet-800',
+      statColor: 'text-violet-600 dark:text-violet-400',
+    },
+    {
+      title: t('landing.benefit5Title', 'Payment Clarity'),
+      desc: t(
+        'landing.benefit5Desc',
+        'Instant digital receipts with real-time DBT fund clearance tracking directly to your registered bank.'
+      ),
       icon: CreditCard,
-      stat: 'Verified DBT',
+      stat: 'Direct Bank Credit',
+      iconBg: 'bg-teal-100 dark:bg-teal-950/70 text-teal-600 dark:text-teal-400 border border-teal-200 dark:border-teal-800',
+      statColor: 'text-teal-600 dark:text-teal-400',
+    },
+    {
+      title: t('landing.benefit6Title', 'Zero Middlemen'),
+      desc: t(
+        'landing.benefit6Desc',
+        'Direct farmer-to-mandi procurement eliminates unauthorized agents, illicit cuts, and unfair bias.'
+      ),
+      icon: UserCheck,
+      stat: '100% Direct MSP',
+      iconBg: 'bg-rose-100 dark:bg-rose-950/70 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800',
+      statColor: 'text-rose-600 dark:text-rose-400',
+    },
+  ];
+
+  // FAQ list
+  const faqs = [
+    {
+      q: t('landing.faq1Q', 'How do I register as a farmer?'),
+      a: t(
+        'landing.faq1A',
+        'Click on "Register as New Farmer" on the home page. Enter your mobile number, verify via OTP, and enter your district, landholding, and bank account details for direct payments.'
+      ),
+    },
+    {
+      q: t('landing.faq2Q', "What if I can't log in?"),
+      a: t(
+        'landing.faq2A',
+        'Ensure you enter the mobile number registered during onboarding. You can log in using either your secure password or instant SMS OTP verification.'
+      ),
+    },
+    {
+      q: t('landing.faq3Q', 'How do I book a procurement appointment?'),
+      a: t(
+        'landing.faq3A',
+        'Log in to your Farmer Dashboard, click "Book Appointment", choose your crop (e.g. Wheat, Paddy, Mustard, Maize), specify estimated quintals, and pick an available date.'
+      ),
+    },
+    {
+      q: t('landing.faq4Q', 'Where do I find my token and QR code?'),
+      a: t(
+        'landing.faq4A',
+        'Immediately after booking, your secure 6-character token (e.g., SP7K4Q) and scannable QR pass are available directly on your Farmer Dashboard under Active Bookings.'
+      ),
+    },
+    {
+      q: t('landing.faq5Q', 'How can I see my live queue status?'),
+      a: t(
+        'landing.faq5A',
+        'On your scheduled appointment day, go to the "Live Queue Tracker" page. It shows exactly how many vehicles are ahead of you, current weighbridge speed, and your estimated wait time.'
+      ),
+    },
+    {
+      q: t('landing.faq6Q', 'What happens if my payment is delayed?'),
+      a: t(
+        'landing.faq6A',
+        'Procurement payments are issued via Direct Benefit Transfer (DBT) within 48 to 72 hours of weighing. You can track status on your dashboard or contact our support team.'
+      ),
     },
   ];
 
   return (
-    <div className="min-h-screen bg-white text-slate-900 flex flex-col">
-      <Navbar />
+    <div
+      className={`min-h-screen transition-colors duration-200 flex flex-col font-sans ${
+        darkMode ? 'bg-slate-950 text-slate-100' : 'bg-[#FAFAF9] text-slate-900'
+      }`}
+    >
+      {/* 1. TOP NAVIGATION BAR */}
+      <Navbar darkMode={darkMode} onToggleTheme={toggleTheme} />
 
-      {/* HERO SECTION */}
-      <section className="relative overflow-hidden bg-gradient-to-b from-emerald-50/70 via-white to-white py-12 lg:py-20 border-b border-slate-100">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6">
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
-            
-            {/* LEFT COLUMN: Messaging and CTAs */}
-            <motion.div
-              initial={{ opacity: 0, y: 18 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5 }}
-              className="lg:col-span-6 space-y-6"
-            >
-              <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-100/90 text-emerald-900 text-xs font-semibold border border-emerald-300">
-                <span className="w-2 h-2 rounded-full bg-emerald-600 animate-pulse" />
-                <span>Smart Agriculture Procurement Initiative</span>
+      <main className="grow">
+        {/* 2. HERO SECTION: CENTERED HEADLINE + CENTERED MAIZE IMAGE + WORKING FARMER IMAGE BELOW */}
+        <section className="relative overflow-hidden pt-8 pb-16 sm:pt-12 sm:pb-20">
+          {/* Subtle Ambient Background Gradients */}
+          <div
+            className={`absolute inset-0 pointer-events-none transition-opacity duration-300 ${
+              darkMode
+                ? 'opacity-30 bg-[radial-gradient(ellipse_at_top,var(--tw-gradient-stops))] from-amber-950/40 via-slate-950 to-slate-950'
+                : 'opacity-40 bg-[radial-gradient(ellipse_at_top,var(--tw-gradient-stops))] from-amber-100/60 via-yellow-50/40 to-transparent'
+            }`}
+          />
+
+          <div className="relative max-w-7xl mx-auto px-4 sm:px-6">
+            {/* Centered Top Heading Content */}
+            <div className="text-center max-w-3xl mx-auto mb-8 sm:mb-10">
+              {/* Government / Agri Initiative Badge */}
+              <div
+                className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-bold border tracking-wide mb-4 ${
+                  darkMode
+                    ? 'bg-amber-950/80 text-amber-300 border-amber-700'
+                    : 'bg-amber-100/90 text-amber-950 border-amber-300 shadow-2xs'
+                }`}
+              >
+                <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+                <span>{t('landing.heroBadge', 'Smart Agriculture Mandi Queue Management')}</span>
               </div>
 
-              <div className="space-y-3">
-                <h1 className="text-3xl sm:text-5xl lg:text-5xl font-extrabold tracking-tight text-slate-900 leading-[1.15]">
-                  Less Waiting. <br />
-                  <span className="text-emerald-700">More Farming.</span>
-                </h1>
-                <p className="text-base sm:text-lg text-slate-600 leading-relaxed max-w-xl">
-                  Don&apos;t make farmers wait for the queue. Let the queue tell farmers when to arrive.
-                  SmartProcure coordinates transparent slot allocation, live mandi velocity, and dynamic ETAs
-                  so you spend your precious time on your farm, not waiting in endless mandi queues.
-                </p>
-              </div>
+              {/* Primary Hero Headline */}
+              <h1 className="text-3xl sm:text-4xl md:text-5xl font-extrabold tracking-tight leading-[1.15] mb-4 text-slate-950 dark:text-white">
+                {t(
+                  'landing.heroHeadline',
+                  'Predictable Mandi Scheduling. Complete Transparency from Arrival to Payout.'
+                )}
+              </h1>
 
-              <div className="flex flex-col sm:flex-row gap-3.5 pt-2">
-                <Link to="/register">
-                  <Button variant="primary" size="lg" className="w-full sm:w-auto text-base gap-2 shadow-md">
-                    <span>Book a Procurement Slot</span>
-                    <ArrowRight className="h-4 w-4" />
-                  </Button>
-                </Link>
+              {/* Short Clear Description - Darkened text for high contrast */}
+              <p
+                className={`text-sm sm:text-base md:text-lg leading-relaxed max-w-2xl mx-auto font-medium ${
+                  darkMode ? 'text-slate-200' : 'text-slate-800'
+                }`}
+              >
+                {t(
+                  'landing.heroSubtitle',
+                  'Eliminate 14-hour mandi queues. SmartProcure assigns precise gate arrival windows, monitors live queue velocity, and guarantees transparent MSP settlements directly to your bank account.'
+                )}
+              </p>
+            </div>
 
-                <Link to="/dashboard/track">
-                  <Button variant="outline" size="lg" className="w-full sm:w-auto text-base gap-2">
-                    <Activity className="h-4 w-4 text-emerald-700" />
-                    <span>Track My Token</span>
-                  </Button>
-                </Link>
-              </div>
-
-              {/* Trust markers */}
-              <div className="pt-4 border-t border-slate-200/80 grid grid-cols-3 gap-4 text-left">
-                <div>
-                  <div className="font-bold text-slate-900 text-base sm:text-lg">09:00–18:00</div>
-                  <div className="text-xs text-slate-500">Mandi Hours (Lunch 2–3 PM)</div>
-                </div>
-                <div>
-                  <div className="font-bold text-emerald-700 text-base sm:text-lg">6-Char</div>
-                  <div className="text-xs text-slate-500">Unique Non-Seq Tokens</div>
-                </div>
-                <div>
-                  <div className="font-bold text-slate-900 text-base sm:text-lg">5 Major</div>
-                  <div className="text-xs text-slate-500">MSP Foodgrains Supported</div>
-                </div>
-              </div>
-            </motion.div>
-
-            {/* RIGHT COLUMN: Large Agriculture Photograph with subtle badge */}
-            <motion.div
-              initial={{ opacity: 0, scale: 0.96 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ duration: 0.6, delay: 0.1 }}
-              className="lg:col-span-6 relative"
-            >
-              <div className="relative rounded-2xl overflow-hidden shadow-2xl border-4 border-white bg-slate-100 aspect-16/10 sm:aspect-16/11 group">
+            {/* Centered Enlarged Maize Image with 2 CTA Buttons Inside (Quote removed) */}
+            <div className="max-w-5xl mx-auto">
+              <div className="relative rounded-3xl overflow-hidden shadow-2xl border border-slate-200/90 dark:border-slate-800 group">
+                {/* Maize Field Image */}
                 <img
-                  src="https://images.unsplash.com/photo-1500937386664-56d1dfef3854?q=80&w=1600&auto=format&fit=crop"
-                  alt="Golden wheat farmland and Indian agriculture field at sunrise"
-                  className="w-full h-full object-cover group-hover:scale-103 transition-transform duration-700"
+                  src="/pexels-todd-trapani-488382-1382102.jpg"
+                  alt="Golden maize crop field in agricultural India"
+                  className="w-full h-[380px] sm:h-[440px] md:h-[480px] object-cover transition-transform duration-700 group-hover:scale-103"
                   loading="eager"
+                  referrerPolicy="no-referrer"
                 />
-                <div className="absolute inset-0 bg-gradient-to-t from-slate-950/70 via-transparent to-transparent pointer-events-none" />
 
-                {/* Floating caption on image */}
-                <div className="absolute bottom-4 left-4 right-4 text-white flex items-center justify-between">
-                  <div>
-                    <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-300 block">
-                      Kharif & Rabi Foodgrain Mandis
-                    </span>
-                    <span className="text-sm font-semibold text-white/95">
-                      Empowering transparent state procurement
-                    </span>
+                {/* Dark Gradient Overlay for optimal legibility */}
+                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-black/20" />
+
+                {/* Top Badge Overlay */}
+                <div className="absolute top-4 sm:top-6 left-4 sm:left-6 right-4 sm:right-6 flex items-center justify-between">
+                  <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-black/70 backdrop-blur-md text-white text-xs font-bold border border-white/20 shadow-md">
+                    <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
+                    <span>Real-Time Mandi Gate Scheduling</span>
                   </div>
-                  <span className="bg-emerald-900/80 backdrop-blur-xs text-emerald-200 text-xs px-2.5 py-1 rounded-md border border-emerald-500/30">
-                    Live Velocity Tracking
+
+                  <span className="hidden sm:inline-block text-xs font-bold text-amber-300 bg-black/70 backdrop-blur-md px-3.5 py-1.5 rounded-full border border-white/20 shadow-md">
+                    MSP Guaranteed • Direct DBT
                   </span>
                 </div>
-              </div>
-            </motion.div>
-          </div>
 
-          {/* COMPACT PRODUCT PREVIEW BELOW HERO */}
-          <motion.div
-            initial={{ opacity: 0, y: 15 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: 0.25 }}
-            className="mt-12 bg-white rounded-xl border border-slate-200 p-5 sm:p-6 shadow-md"
-          >
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 mb-4 border-b border-slate-100">
-              <div className="flex items-center gap-2.5">
-                <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping" />
-                <span className="text-xs font-bold uppercase tracking-wider text-slate-700">
-                  SmartProcure Queue Intelligence Engine &bull; Visual Concept Preview
-                </span>
-              </div>
-              <span className="text-[11px] text-slate-400 font-mono">
-                [Architecture Preview: Mock Representation for Phase 1]
-              </span>
-            </div>
+                {/* 2 Primary CTA Buttons Inside Maize Image (No Quote) */}
+                <div className="absolute bottom-6 sm:bottom-10 left-4 sm:left-8 right-4 sm:right-8 flex flex-col sm:flex-row items-center justify-center gap-3 sm:gap-4">
+                  {/* CTA 1: Book Appointment */}
+                  <Link to="/dashboard/book" className="w-full sm:w-auto">
+                    <button
+                      type="button"
+                      className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-8 py-3.5 rounded-xl font-extrabold text-sm sm:text-base text-white bg-amber-500 hover:bg-amber-600 active:bg-amber-700 transition-all shadow-xl hover:shadow-2xl cursor-pointer border border-amber-400/50"
+                    >
+                      <CalendarPlus className="h-5 w-5 shrink-0" />
+                      <span>{t('landing.bookAppointment', 'Book Appointment')}</span>
+                      <ArrowRight className="h-5 w-5 shrink-0" />
+                    </button>
+                  </Link>
 
-            <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 sm:gap-6 text-center">
-              <div className="p-3 rounded-lg bg-emerald-50/50 border border-emerald-100">
-                <span className="text-xs text-slate-500 font-medium block mb-1">TOKEN</span>
-                <span className="font-mono text-xl sm:text-2xl font-extrabold text-emerald-800 tracking-wider">
-                  SP7K4Q
-                </span>
-              </div>
-
-              <div className="p-3 rounded-lg bg-slate-50 border border-slate-200">
-                <span className="text-xs text-slate-500 font-medium block mb-1">QUEUE POSITION</span>
-                <span className="text-xl sm:text-2xl font-extrabold text-slate-900">
-                  6
-                </span>
-              </div>
-
-              <div className="p-3 rounded-lg bg-slate-50 border border-slate-200">
-                <span className="text-xs text-slate-500 font-medium block mb-1">ESTIMATED WAIT</span>
-                <span className="text-xl sm:text-2xl font-extrabold text-slate-900">
-                  42 min
-                </span>
-              </div>
-
-              <div className="p-3 rounded-lg bg-slate-50 border border-slate-200">
-                <span className="text-xs text-slate-500 font-medium block mb-1">EXPECTED</span>
-                <span className="text-base sm:text-xl font-extrabold text-slate-900">
-                  11:35–11:50 AM
-                </span>
-              </div>
-
-              <div className="p-3 rounded-lg bg-emerald-50/80 border border-emerald-200 col-span-2 sm:col-span-1 flex flex-col justify-center">
-                <span className="text-xs text-slate-500 font-medium block mb-1">STATUS</span>
-                <div className="flex items-center justify-center gap-1.5 text-emerald-800 font-bold text-sm sm:text-base">
-                  <span className="w-2 h-2 rounded-full bg-emerald-600" />
-                  Live
+                  {/* CTA 2: Register as New Farmer */}
+                  <Link to="/register" className="w-full sm:w-auto">
+                    <button
+                      type="button"
+                      className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-8 py-3.5 rounded-xl font-extrabold text-sm sm:text-base text-slate-950 bg-white hover:bg-slate-100 active:bg-slate-200 transition-all shadow-xl hover:shadow-2xl cursor-pointer border border-white"
+                    >
+                      <UserCheck className="h-5 w-5 shrink-0 text-amber-600" />
+                      <span>{t('landing.registerFarmer', 'Register as New Farmer')}</span>
+                    </button>
+                  </Link>
                 </div>
               </div>
             </div>
-          </motion.div>
-        </div>
-      </section>
 
-      {/* SECTION 1: HOW SMARTPROCURE WORKS */}
-      <section id="how-it-works" className="py-16 sm:py-20 bg-slate-50/60 border-b border-slate-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6">
-          <div className="text-center max-w-2xl mx-auto mb-14 space-y-3">
-            <span className="text-xs font-bold text-emerald-700 uppercase tracking-widest bg-emerald-100/70 px-3 py-1 rounded-full border border-emerald-200">
-              Structured Procurement Lifecycle
-            </span>
-            <h2 className="text-2xl sm:text-4xl font-extrabold text-slate-900 tracking-tight">
-              How SmartProcure Works
-            </h2>
-            <p className="text-sm sm:text-base text-slate-600 leading-relaxed">
-              From field registration to direct bank account deposit, every milestone is structured,
-              transparent, and verifiable.
-            </p>
-          </div>
+            {/* Working Farmer Image Below that */}
+            <div className="max-w-5xl mx-auto mt-8 sm:mt-10">
+              <div className="relative rounded-2xl overflow-hidden shadow-lg border border-slate-200/90 dark:border-slate-800 group">
+                <img
+                  src="/pexels-hson-32954665.jpg"
+                  alt="Hardworking farmer harvesting crop in the field"
+                  className="w-full h-56 sm:h-64 md:h-72 object-cover transition-transform duration-700 group-hover:scale-102"
+                  loading="lazy"
+                  referrerPolicy="no-referrer"
+                />
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            {workflowSteps.slice(0, 4).map((item) => {
-              const Icon = item.icon;
-              return (
-                <div
-                  key={item.step}
-                  className="bg-white p-6 rounded-xl border border-slate-200 shadow-xs hover:border-emerald-300 transition-colors flex flex-col justify-between"
-                >
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-mono font-bold text-emerald-700 bg-emerald-50 px-2 py-1 rounded border border-emerald-200">
-                        STEP {item.step}
-                      </span>
-                      <div className="w-9 h-9 rounded-lg bg-slate-100 flex items-center justify-center text-emerald-700">
-                        <Icon className="h-5 w-5" />
-                      </div>
+                {/* Atmospheric gradient overlay */}
+                <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/35 to-transparent" />
+
+                {/* Bottom caption tribute with high contrast dark/light text */}
+                <div className="absolute bottom-4 sm:bottom-6 left-4 sm:left-6 right-4 sm:right-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-white">
+                  <div>
+                    <div className="text-xs sm:text-sm font-extrabold tracking-wide text-amber-300 uppercase drop-shadow-sm">
+                      Honoring India&apos;s Annadata
                     </div>
-                    <div>
-                      <h3 className="font-bold text-base text-slate-900">{item.title}</h3>
-                      <p className="text-xs text-slate-500 mt-0.5">{item.hindi}</p>
-                    </div>
-                    <p className="text-xs text-slate-600 leading-relaxed">{item.desc}</p>
+                    <p className="text-xs sm:text-sm text-white font-medium drop-shadow-sm max-w-xl">
+                      Built to protect farmers from endless queues, unfair middleman commissions, and arbitrary gate delays.
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className="inline-flex items-center gap-1 text-xs font-bold px-3.5 py-1.5 rounded-full bg-black/60 backdrop-blur-md border border-white/25 text-white shadow-sm">
+                      <CheckCircle2 className="h-4 w-4 text-emerald-400" />
+                      100% Direct MSP Payout
+                    </span>
                   </div>
                 </div>
-              );
-            })}
+              </div>
+            </div>
           </div>
+        </section>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-6">
-            {workflowSteps.slice(4, 7).map((item) => {
-              const Icon = item.icon;
-              return (
-                <div
-                  key={item.step}
-                  className="bg-white p-6 rounded-xl border border-slate-200 shadow-xs hover:border-emerald-300 transition-colors flex flex-col justify-between"
-                >
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-mono font-bold text-emerald-700 bg-emerald-50 px-2 py-1 rounded border border-emerald-200">
-                        STEP {item.step}
-                      </span>
-                      <div className="w-9 h-9 rounded-lg bg-slate-100 flex items-center justify-center text-emerald-700">
-                        <Icon className="h-5 w-5" />
-                      </div>
-                    </div>
-                    <div>
-                      <h3 className="font-bold text-base text-slate-900">{item.title}</h3>
-                      <p className="text-xs text-slate-500 mt-0.5">{item.hindi}</p>
-                    </div>
-                    <p className="text-xs text-slate-600 leading-relaxed">{item.desc}</p>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      </section>
-
-      {/* SECTION 2: WHY SMARTPROCURE */}
-      <section id="why-smartprocure" className="py-16 sm:py-20 bg-white border-b border-slate-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6">
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
-            <div className="lg:col-span-5 space-y-6">
-              <span className="text-xs font-bold text-emerald-700 uppercase tracking-widest bg-emerald-100/70 px-3 py-1 rounded-full border border-emerald-200">
-                Core Value Proposition
+        {/* 3. "HOW TO USE SMARTPROCURE" (Updated with Orange & Yellow Visual Theme) */}
+        <section
+          id="how-to-use"
+          className={`py-16 sm:py-20 border-t transition-colors duration-200 ${
+            darkMode ? 'bg-slate-900/60 border-slate-800' : 'bg-[#FFFDF7] border-amber-200/50'
+          }`}
+        >
+          <div className="max-w-7xl mx-auto px-4 sm:px-6">
+            <div className="text-center max-w-3xl mx-auto mb-12 sm:mb-16">
+              <span className="inline-block text-xs font-bold uppercase tracking-wider px-3 py-1 rounded-full bg-amber-100 dark:bg-amber-950/80 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800 mb-2">
+                Orange & Gold Harvest Workflow
               </span>
-              <h2 className="text-2xl sm:text-4xl font-extrabold text-slate-900 tracking-tight leading-tight">
-                Designed Around the Reality of Agricultural Procurement
+              <h2 className="text-2xl sm:text-3xl md:text-4xl font-extrabold tracking-tight mt-1 mb-3">
+                {t('landing.howToUseTitle', 'How to Use SmartProcure')}
               </h2>
-              <p className="text-sm sm:text-base text-slate-600 leading-relaxed">
-                Traditional appointment systems fail in mandis because grain unloading and moisture testing
-                unfold at variable speeds. SmartProcure measures real-time handling velocity, predicts bottlenecks,
-                and respects mandatory scheduled pauses.
+              <p className={`text-sm sm:text-base ${darkMode ? 'text-slate-400' : 'text-slate-600'}`}>
+                {t(
+                  'landing.howToUseSubtitle',
+                  'A transparent 8-step journey from home registration to direct bank payout.'
+                )}
               </p>
-
-              <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-2">
-                <div className="font-bold text-xs uppercase tracking-wider text-slate-700">
-                  Mandatory Operating Hours Rule
-                </div>
-                <p className="text-xs text-slate-600 leading-relaxed">
-                  Centres operate from <strong>09:00 AM to 06:00 PM</strong> with a scheduled lunch break
-                  from <strong>02:00 PM to 03:00 PM</strong>. SmartProcure&apos;s ETA algorithm strictly prevents
-                  blind estimations through lunch hours.
-                </p>
-              </div>
             </div>
 
-            <div className="lg:col-span-7 grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
-              {whyPoints.map((point) => {
-                const Icon = point.icon;
+            {/* 8-Step Grid with warm orange & yellow accents */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
+              {farmerJourneySteps.map((step) => {
+                const IconComponent = step.icon;
                 return (
                   <div
-                    key={point.title}
-                    className="p-5 sm:p-6 rounded-xl border border-slate-200 bg-white shadow-xs hover:shadow-md transition-shadow flex flex-col justify-between"
+                    key={step.num}
+                    className={`relative p-5 rounded-2xl border transition-all duration-200 hover:-translate-y-1 group ${
+                      darkMode
+                        ? 'bg-slate-900/90 border-amber-950/70 hover:border-amber-600 hover:shadow-lg hover:shadow-amber-950/30'
+                        : 'bg-white border-amber-200/90 hover:border-orange-400 hover:shadow-md hover:shadow-amber-500/10'
+                    }`}
                   >
-                    <div className="space-y-3">
-                      <div className="flex items-center justify-between">
-                        <div className="w-10 h-10 rounded-lg bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-700">
-                          <Icon className="h-5 w-5" />
-                        </div>
-                        <span className="text-xs font-bold text-emerald-800 bg-emerald-100/80 px-2 py-0.5 rounded">
-                          {point.stat}
-                        </span>
+                    {/* Top Row: Orange/Yellow Step Badge & Icon */}
+                    <div className="flex items-center justify-between mb-4">
+                      <span className="font-mono text-xs font-extrabold px-2.5 py-1 rounded-md bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-xs">
+                        Step 0{step.num}
+                      </span>
+                      <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-gradient-to-br from-amber-100 to-orange-100 dark:from-amber-950/80 dark:to-orange-950/80 border border-amber-300/80 dark:border-amber-800 text-orange-600 dark:text-amber-400 shadow-2xs group-hover:scale-105 transition-transform">
+                        <IconComponent className="h-5 w-5" />
                       </div>
-                      <h4 className="font-bold text-base text-slate-900">{point.title}</h4>
-                      <p className="text-xs text-slate-600 leading-relaxed">{point.desc}</p>
+                    </div>
+
+                    <h3 className="text-base font-bold mb-1.5 text-slate-900 dark:text-slate-100 group-hover:text-amber-600 dark:group-hover:text-amber-400 transition-colors">
+                      {step.title}
+                    </h3>
+                    <p className={`text-xs leading-relaxed ${darkMode ? 'text-slate-400' : 'text-slate-600'}`}>
+                      {step.desc}
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </section>
+
+        {/* 4. "HOW SMARTPROCURE WORKS" (Flow Chart / Process with Exactly 6 Blocks & Colorful Logos) */}
+        <section
+          id="how-it-works"
+          className={`py-16 sm:py-20 border-t transition-colors duration-200 ${
+            darkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200/80'
+          }`}
+        >
+          <div className="max-w-7xl mx-auto px-4 sm:px-6">
+            <div className="text-center max-w-3xl mx-auto mb-12 sm:mb-16">
+              <span className="text-xs font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
+                Process Flowchart
+              </span>
+              <h2 className="text-2xl sm:text-3xl md:text-4xl font-extrabold tracking-tight mt-1 mb-3">
+                {t('landing.howItWorksTitle', 'How SmartProcure Works')}
+              </h2>
+              <p className={`text-sm sm:text-base ${darkMode ? 'text-slate-400' : 'text-slate-600'}`}>
+                {t(
+                  'landing.howItWorksSubtitle',
+                  'A synchronized digital pipeline connecting farmers directly with government procurement mandis.'
+                )}
+              </p>
+            </div>
+
+            {/* Exactly 6 Blocks Flowchart Grid with connecting indicators */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 relative">
+              {processFlowSteps.map((step, idx) => {
+                const IconComponent = step.icon;
+                return (
+                  <div
+                    key={step.stepNumber}
+                    className={`relative p-6 rounded-2xl border transition-all duration-200 hover:-translate-y-1 ${step.glowBorder} ${
+                      darkMode
+                        ? 'bg-slate-900 border-slate-800 hover:shadow-lg'
+                        : 'bg-white border-slate-200 shadow-2xs hover:shadow-md'
+                    }`}
+                  >
+                    {/* Top Row: Colorful Logo Icon & Step Number */}
+                    <div className="flex items-center justify-between mb-4">
+                      <div className={`w-12 h-12 rounded-xl flex items-center justify-center shadow-xs ${step.colorClass}`}>
+                        <IconComponent className="h-6 w-6" />
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <span className={`text-xs font-bold px-2.5 py-1 rounded-full border ${step.badgeBg}`}>
+                          Phase {step.stepNumber}
+                        </span>
+                        {idx < 5 && (
+                          <span className="hidden lg:inline-block text-slate-300 dark:text-slate-700">
+                            <ArrowRight className="h-4 w-4" />
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <h3 className="text-lg font-bold mb-2 text-slate-900 dark:text-slate-100">
+                      {step.title}
+                    </h3>
+                    <p className={`text-xs sm:text-sm leading-relaxed ${darkMode ? 'text-slate-400' : 'text-slate-600'}`}>
+                      {step.desc}
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </section>
+
+        {/* 5. "WHY SMARTPROCURE" (Even 6 Blocks with Colorful Logos) */}
+        <section
+          id="why-smartprocure"
+          className={`py-16 sm:py-20 border-t transition-colors duration-200 ${
+            darkMode ? 'bg-slate-900/60 border-slate-800' : 'bg-white border-slate-200/80'
+          }`}
+        >
+          <div className="max-w-7xl mx-auto px-4 sm:px-6">
+            <div className="text-center max-w-3xl mx-auto mb-12 sm:mb-16">
+              <span className="text-xs font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
+                Core Advantages
+              </span>
+              <h2 className="text-2xl sm:text-3xl md:text-4xl font-extrabold tracking-tight mt-1 mb-3">
+                {t('landing.whyTitle', 'Why SmartProcure?')}
+              </h2>
+              <p className={`text-sm sm:text-base ${darkMode ? 'text-slate-400' : 'text-slate-600'}`}>
+                {t(
+                  'landing.whySubtitle',
+                  'Engineered specifically to dismantle mandi congestion and restore dignity to farmers.'
+                )}
+              </p>
+            </div>
+
+            {/* Even 3x2 Grid (6 Blocks) with colorful logos */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+              {benefits.map((b) => {
+                const IconComponent = b.icon;
+                return (
+                  <div
+                    key={b.title}
+                    className={`p-6 rounded-2xl border flex flex-col justify-between transition-all duration-200 hover:-translate-y-1 ${
+                      darkMode
+                        ? 'bg-slate-900 border-slate-800 hover:border-slate-700 hover:shadow-md'
+                        : 'bg-[#FAFAF9] border-slate-200 hover:border-slate-300 hover:shadow-md'
+                    }`}
+                  >
+                    <div>
+                      {/* Colorful Logo Badge */}
+                      <div className={`w-12 h-12 rounded-xl flex items-center justify-center mb-4 shadow-2xs ${b.iconBg}`}>
+                        <IconComponent className="h-6 w-6" />
+                      </div>
+
+                      <h3 className="text-lg font-bold mb-2 text-slate-900 dark:text-slate-100">{b.title}</h3>
+                      <p className={`text-xs sm:text-sm leading-relaxed ${darkMode ? 'text-slate-400' : 'text-slate-600'}`}>
+                        {b.desc}
+                      </p>
+                    </div>
+
+                    <div className="pt-5 mt-4 border-t border-slate-200/80 dark:border-slate-800 flex items-center justify-between">
+                      <span className={`text-xs font-bold ${b.statColor}`}>
+                        {b.stat}
+                      </span>
+                      <CheckCircle2 className="h-4 w-4 text-slate-300 dark:text-slate-700" />
                     </div>
                   </div>
                 );
               })}
             </div>
           </div>
-        </div>
-      </section>
+        </section>
 
-      {/* SECTION 3: LIVE QUEUE CONCEPT DEMONSTRATION */}
-      <section id="live-queue" className="py-16 sm:py-20 bg-slate-50/60 border-b border-slate-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6">
-          <div className="text-center max-w-2xl mx-auto mb-12 space-y-3">
-            <span className="text-xs font-bold text-emerald-700 uppercase tracking-widest bg-emerald-100/70 px-3 py-1 rounded-full border border-emerald-200">
-              Live Queue Intelligence
-            </span>
-            <h2 className="text-2xl sm:text-4xl font-extrabold text-slate-900 tracking-tight">
-              Live Queue Concept Demonstration
-            </h2>
-            <p className="text-xs sm:text-sm text-slate-500">
-              Below is a visual concept of our Queue Intelligence algorithm.
-              (Mock demonstration for evaluation; prepared for Supabase Realtime).
-            </p>
-          </div>
-
-          <div className="max-w-4xl mx-auto bg-white rounded-2xl border-2 border-emerald-600/30 p-6 sm:p-8 shadow-lg">
-            {/* Header with last updated notice */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-6 border-b border-slate-200">
-              <div>
-                <span className="text-xs font-bold uppercase tracking-wider text-emerald-700 block">
-                  Ludhiana Central Mandi &bull; Yard 4
-                </span>
-                <h3 className="font-extrabold text-lg text-slate-900">
-                  Active Intake Velocity &bull; 22 mins/farmer
-                </h3>
-              </div>
-              <div className="flex items-center gap-2 text-xs text-slate-500 bg-slate-100 px-3 py-1.5 rounded-full">
-                <Clock className="h-3.5 w-3.5 text-emerald-600" />
-                <span>Last updated: <strong>2 min ago</strong></span>
-              </div>
-            </div>
-
-            {/* Main Stats Grid */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 my-6">
-              <div className="p-4 rounded-xl bg-slate-900 text-white text-center">
-                <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">
-                  Currently Serving
-                </span>
-                <span className="font-mono text-2xl sm:text-3xl font-extrabold text-emerald-400 mt-1 block">
-                  SP7K3M
-                </span>
-                <span className="text-[10px] text-slate-400 mt-1 block">Weighbridge Bay 1</span>
-              </div>
-
-              <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-center">
-                <span className="text-[11px] font-semibold text-emerald-800 uppercase tracking-wider block">
-                  Your Token
-                </span>
-                <span className="font-mono text-2xl sm:text-3xl font-extrabold text-emerald-800 mt-1 block">
-                  SP7K4Q
-                </span>
-                <span className="text-[10px] text-emerald-700 font-bold mt-1 block">YOU (Position #6)</span>
-              </div>
-
-              <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 text-center">
-                <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider block">
-                  Farmers Ahead
-                </span>
-                <span className="text-2xl sm:text-3xl font-extrabold text-slate-900 mt-1 block">
-                  5
-                </span>
-                <span className="text-[10px] text-slate-400 mt-1 block">In holding yard</span>
-              </div>
-
-              <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 text-center">
-                <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider block">
-                  Expected Time
-                </span>
-                <span className="text-lg sm:text-xl font-extrabold text-slate-900 mt-1 block">
-                  11:35–11:50 AM
-                </span>
-                <span className="text-[10px] text-emerald-700 font-semibold mt-1 block">Wait: ~42 mins</span>
-              </div>
-            </div>
-
-            {/* Sequence Ladder */}
-            <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
-              <span className="text-xs font-bold text-slate-700 block mb-3">
-                Token Queue Progression:
+        {/* 6. FAQ SECTION (Accordion Style) */}
+        <section
+          id="faq"
+          className={`py-16 sm:py-20 border-t transition-colors duration-200 ${
+            darkMode ? 'bg-slate-950 border-slate-800' : 'bg-slate-50/50 border-slate-200/80'
+          }`}
+        >
+          <div className="max-w-4xl mx-auto px-4 sm:px-6">
+            <div className="text-center max-w-2xl mx-auto mb-12">
+              <span className="text-xs font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
+                Got Questions?
               </span>
-              <div className="flex flex-wrap items-center gap-2 text-xs">
-                <span className="px-3 py-1.5 rounded-lg bg-emerald-700 text-white font-mono font-bold flex items-center gap-1.5 shadow-xs">
-                  <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" />
-                  SP7K3M (NOW SERVING)
-                </span>
-                <span className="text-slate-400">&rarr;</span>
-                <span className="px-2.5 py-1 rounded bg-white border border-slate-300 font-mono text-slate-700">
-                  SP7K3N
-                </span>
-                <span className="text-slate-400">&rarr;</span>
-                <span className="px-2.5 py-1 rounded bg-white border border-slate-300 font-mono text-slate-700">
-                  SP7K3P
-                </span>
-                <span className="text-slate-400">&rarr;</span>
-                <span className="px-2.5 py-1 rounded bg-white border border-slate-300 font-mono text-slate-700">
-                  SP7K3R
-                </span>
-                <span className="text-slate-400">&rarr;</span>
-                <span className="px-2.5 py-1 rounded bg-white border border-slate-300 font-mono text-slate-700">
-                  SP7K4A
-                </span>
-                <span className="text-slate-400">&rarr;</span>
-                <span className="px-3 py-1 rounded-lg bg-amber-100 border border-amber-300 font-mono font-bold text-amber-900">
-                  SP7K4Q &larr; YOU
+              <h2 className="text-2xl sm:text-3xl md:text-4xl font-extrabold tracking-tight mt-1 mb-3">
+                {t('landing.faqTitle', 'Frequently Asked Questions')}
+              </h2>
+              <p className={`text-sm sm:text-base ${darkMode ? 'text-slate-400' : 'text-slate-600'}`}>
+                {t(
+                  'landing.faqSubtitle',
+                  'Everything you need to know about slot booking, token passes, and payout verification.'
+                )}
+              </p>
+            </div>
+
+            {/* Accordion List */}
+            <div className="space-y-3">
+              {faqs.map((faq, idx) => {
+                const isOpen = openFaq === idx;
+                return (
+                  <div
+                    key={faq.q}
+                    className={`rounded-xl border transition-colors ${
+                      darkMode
+                        ? 'bg-slate-900/90 border-slate-800'
+                        : 'bg-white border-slate-200/90 shadow-2xs'
+                    }`}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => setOpenFaq(isOpen ? null : idx)}
+                      className="w-full text-left p-4 sm:p-5 flex items-center justify-between gap-4 font-semibold text-sm sm:text-base cursor-pointer focus:outline-hidden"
+                    >
+                      <span className={isOpen ? 'text-emerald-600 dark:text-emerald-400' : ''}>{faq.q}</span>
+                      <div className="shrink-0 text-slate-400">
+                        {isOpen ? <ChevronUp className="h-5 w-5" /> : <ChevronDown className="h-5 w-5" />}
+                      </div>
+                    </button>
+
+                    <AnimatePresence initial={false}>
+                      {isOpen && (
+                        <motion.div
+                          initial={{ height: 0, opacity: 0 }}
+                          animate={{ height: 'auto', opacity: 1 }}
+                          exit={{ height: 0, opacity: 0 }}
+                          transition={{ duration: 0.2 }}
+                          className="overflow-hidden"
+                        >
+                          <div
+                            className={`px-4 sm:px-5 pb-5 pt-1 text-xs sm:text-sm leading-relaxed border-t ${
+                              darkMode
+                                ? 'border-slate-800 text-slate-300'
+                                : 'border-slate-100 text-slate-600'
+                            }`}
+                          >
+                            {faq.a}
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </section>
+
+        {/* 7. CONTACT US & SUPPORT */}
+        <section
+          id="contact"
+          className={`py-14 sm:py-16 border-t transition-colors duration-200 ${
+            darkMode ? 'bg-slate-900/60 border-slate-800' : 'bg-white border-slate-200/80'
+          }`}
+        >
+          <div className="max-w-4xl mx-auto px-4 sm:px-6">
+            <div
+              className={`p-6 sm:p-8 rounded-2xl border text-center ${
+                darkMode
+                  ? 'bg-slate-900 border-slate-800'
+                  : 'bg-gradient-to-b from-white to-emerald-50/30 border-slate-200 shadow-2xs'
+              }`}
+            >
+              <div className="w-12 h-12 mx-auto mb-4 rounded-xl bg-emerald-100 dark:bg-emerald-950 flex items-center justify-center text-emerald-700 dark:text-emerald-300">
+                <Mail className="h-6 w-6" />
+              </div>
+              <h3 className="text-xl sm:text-2xl font-bold mb-2">
+                {t('landing.contactTitle', 'Contact Us')}
+              </h3>
+              <p className={`text-xs sm:text-sm max-w-md mx-auto mb-5 ${darkMode ? 'text-slate-400' : 'text-slate-600'}`}>
+                {t(
+                  'landing.contactSubtitle',
+                  'Have questions, feedback, or need technical assistance with mandi scheduling?'
+                )}
+              </p>
+
+              <a
+                href="mailto:smartprocurementsystem@gmail.com"
+                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl font-semibold text-xs sm:text-sm bg-emerald-600 hover:bg-emerald-700 text-white transition-colors shadow-2xs"
+              >
+                <Mail className="h-4 w-4" />
+                <span>smartprocurementsystem@gmail.com</span>
+                <ArrowUpRight className="h-4 w-4" />
+              </a>
+            </div>
+          </div>
+        </section>
+
+        {/* 8. SIH / TEAM SECTION (Small, polished, professional) */}
+        <section
+          className={`py-8 border-t transition-colors duration-200 ${
+            darkMode ? 'bg-slate-950 border-slate-900' : 'bg-slate-50 border-slate-200/60'
+          }`}
+        >
+          <div className="max-w-4xl mx-auto px-4 sm:px-6">
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 text-center sm:text-left">
+              <div>
+                <div className="text-xs font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
+                  SmartProcure
+                </div>
+                <div className="text-sm font-semibold text-slate-800 dark:text-slate-200">
+                  {t('landing.sihPrototype', 'Smart India Hackathon Prototype')}
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 text-xs">
+                <span className="text-slate-400">{t('landing.teamLabel', 'Team')}:</span>
+                <span className="px-2.5 py-1 rounded-md font-bold tracking-wider bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-emerald-700 dark:text-emerald-400">
+                  {t('landing.teamName', 'INNOVEX')}
                 </span>
               </div>
             </div>
           </div>
-        </div>
-      </section>
+        </section>
+      </main>
 
-      {/* SECTION 4: HELP & CONTACT */}
-      <section id="help" className="py-16 sm:py-20 bg-white border-b border-slate-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-            <div className="p-6 rounded-xl bg-slate-50 border border-slate-200">
-              <div className="w-10 h-10 rounded-lg bg-emerald-100 text-emerald-800 flex items-center justify-center mb-4">
-                <Phone className="h-5 w-5" />
-              </div>
-              <h3 className="font-bold text-base text-slate-900 mb-1">Kisan Call Centre</h3>
-              <p className="text-xs text-slate-600 mb-3">
-                Dial toll-free nationwide for immediate support regarding slot re-scheduling or mandi delay advisories.
-              </p>
-              <div className="text-base font-extrabold text-emerald-800 font-mono">
-                1800-180-1551
-              </div>
-            </div>
-
-            <div className="p-6 rounded-xl bg-slate-50 border border-slate-200">
-              <div className="w-10 h-10 rounded-lg bg-emerald-100 text-emerald-800 flex items-center justify-center mb-4">
-                <HelpCircle className="h-5 w-5" />
-              </div>
-              <h3 className="font-bold text-base text-slate-900 mb-1">Mandi Grievance Cell</h3>
-              <p className="text-xs text-slate-600 mb-3">
-                Report discrepancies regarding electronic weighbridge logs, FAQ moisture checks, or delayed payments.
-              </p>
-              <div className="text-sm font-semibold text-slate-800">
-                grievance@smartprocure.gov.in
-              </div>
-            </div>
-
-            <div className="p-6 rounded-xl bg-slate-50 border border-slate-200">
-              <div className="w-10 h-10 rounded-lg bg-emerald-100 text-emerald-800 flex items-center justify-center mb-4">
-                <Clock className="h-5 w-5" />
-              </div>
-              <h3 className="font-bold text-base text-slate-900 mb-1">Operating Hours Notice</h3>
-              <p className="text-xs text-slate-600 mb-3">
-                Physical gate intake occurs between 09:00 AM – 06:00 PM. Verification operations pause for 60 mins during lunch.
-              </p>
-              <div className="text-xs font-semibold text-emerald-800">
-                Shift 1: 09:00–14:00 | Shift 2: 15:00–18:00
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <Footer />
+      {/* 9. FOOTER */}
+      <Footer darkMode={darkMode} />
     </div>
   );
 };

@@ -32,14 +32,19 @@ import {
 } from '../../data/mockData';
 import { formatCurrencyINR } from '../../lib/utils';
 import { useAuth } from '../../contexts/AuthContext';
-import { IndianState, Crop, CropName, FarmerProfile, ProcurementBooking } from '../../types';
+import { useTranslation } from 'react-i18next';
+import { IndianState, Crop, CropName, FarmerProfile, ProcurementBooking, SystemNotification } from '../../types';
 import { farmerService } from '../../services/farmerService';
 import { cropService } from '../../services/cropService';
 import { bookingService } from '../../services/bookingService';
 import { queueService } from '../../services/queueService';
+import { notificationService } from '../../services/notificationService';
+import { paymentService } from '../../services/paymentService';
+import { FarmerProcurementStatusTracker } from '../../components/farmer/FarmerProcurementStatusTracker';
 
 export const FarmerDashboard: React.FC = () => {
   const navigate = useNavigate();
+  const { t } = useTranslation();
   const { profile: authProfile, user } = useAuth();
   const [farmerProfile, setFarmerProfile] = React.useState<FarmerProfile | null>(null);
   const [tokenCopied, setTokenCopied] = React.useState(false);
@@ -47,6 +52,7 @@ export const FarmerDashboard: React.FC = () => {
   // Real Supabase active booking state
   const [booking, setBooking] = React.useState<ProcurementBooking | null>(null);
   const [isLoadingBooking, setIsLoadingBooking] = React.useState<boolean>(true);
+  const [notifications, setNotifications] = React.useState<SystemNotification[]>([]);
 
   // Crop & Pricing state connected to Supabase
   const [cropsList, setCropsList] = React.useState<Crop[]>([]);
@@ -58,7 +64,16 @@ export const FarmerDashboard: React.FC = () => {
   const reloadBooking = React.useCallback(async () => {
     try {
       const current = await bookingService.getCurrentBooking();
-      setBooking(current);
+      if (current) {
+        setBooking(current);
+      } else {
+        const allBookings = await bookingService.getMyBookings();
+        if (allBookings && allBookings.length > 0) {
+          setBooking(allBookings[0]);
+        } else {
+          setBooking(null);
+        }
+      }
     } catch (err) {
       console.warn('Could not reload current booking in Dashboard:', err);
     }
@@ -90,8 +105,15 @@ export const FarmerDashboard: React.FC = () => {
       setIsLoadingBooking(true);
       try {
         const current = await bookingService.getCurrentBooking();
-        if (active) {
+        if (active && current) {
           setBooking(current);
+        } else if (active) {
+          const all = await bookingService.getMyBookings();
+          if (active && all && all.length > 0) {
+            setBooking(all[0]);
+          } else if (active) {
+            setBooking(null);
+          }
         }
       } catch (err) {
         console.warn('Could not load current booking:', err);
@@ -104,6 +126,40 @@ export const FarmerDashboard: React.FC = () => {
       active = false;
     };
   }, [user?.id]);
+
+  // Fetch farmer notifications and subscribe to real-time updates
+  React.useEffect(() => {
+    let active = true;
+    notificationService.getNotifications().then((items) => {
+      if (active && items) {
+        setNotifications(items);
+      }
+    });
+
+    const unsubscribe = notificationService.subscribeToNotifications(() => {
+      notificationService.getNotifications().then((items) => {
+        if (active && items) {
+          setNotifications(items);
+        }
+      });
+    });
+
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  }, [user?.id]);
+
+  // Subscribe to real-time payment updates for this farmer
+  React.useEffect(() => {
+    if (!user?.id) return;
+    const unsubscribe = paymentService.subscribeToFarmerPayments(user.id, () => {
+      reloadBooking();
+    });
+    return () => {
+      unsubscribe();
+    };
+  }, [user?.id, reloadBooking]);
 
   // Sync active booking in real-time when admin alters queue status in Supabase
   React.useEffect(() => {
@@ -246,20 +302,29 @@ export const FarmerDashboard: React.FC = () => {
             <span>Verified Farmer Profile &bull; State of {farmer.state}</span>
           </div>
           <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
-            Good morning, {farmer.fullName} 👋
+            {t('dashboard.greeting', 'Good morning')}, {farmer.fullName} 👋
           </h1>
           <p className="text-sm text-slate-500 mt-0.5">
-            Official foodgrain procurement portal &bull; Central MSP operations
+            {t('dashboard.officialPortal', 'Official foodgrain procurement portal • Central MSP operations')}
           </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2 sm:gap-3">
           <Link to="/farmer/booking">
-            <Button variant="primary" size="md" className="gap-2 shadow-xs">
+            <Button variant="orange" size="md" className="gap-2 shadow-sm font-semibold">
               <CalendarPlus className="h-4 w-4" />
-              <span>Book a Procurement Slot</span>
+              <span>{t('dashboard.bookSlotCta', 'Book a Procurement Slot')}</span>
             </Button>
           </Link>
+        </div>
+      </div>
+
+      {/* OPERATING HOURS & KISAN HELPLINE NOTICE BANNER */}
+      <div className="p-3.5 rounded-xl bg-amber-50/90 border border-amber-200 flex items-start gap-3 shadow-xs">
+        <Clock className="h-5 w-5 text-amber-700 shrink-0 mt-0.5" />
+        <div className="text-xs text-amber-950 leading-relaxed flex-1">
+          <span className="font-bold">{t('dashboard.mandiHoursNotice', 'Centres operate from 09:00 AM to 06:00 PM with scheduled lunch break from 02:00 PM to 03:00 PM.')}</span>
+          <span className="inline-block sm:inline sm:ml-2 font-medium text-amber-900">{t('dashboard.kisanHelpline', 'Kisan Helpline: 1800-180-1551 (Toll Free)')}</span>
         </div>
       </div>
 
@@ -285,15 +350,14 @@ export const FarmerDashboard: React.FC = () => {
             <div className="space-y-1">
               <div className="flex items-center gap-2.5">
                 <h3 className="text-xl font-extrabold text-slate-900">
-                  No active procurement booking
+                  {t('dashboard.noActiveBookingTitle', 'No active procurement booking')}
                 </h3>
                 <span className="text-[11px] font-bold text-emerald-800 bg-emerald-100/80 px-2 py-0.5 rounded-full border border-emerald-200">
-                  Ready to Schedule
+                  {t('dashboard.readyToSchedule', 'Ready to Schedule')}
                 </span>
               </div>
               <p className="text-sm text-slate-600 max-w-xl leading-relaxed">
-                Schedule your foodgrain delivery to avoid mandi queues and guarantee minimum support price settlement.
-                Your 6-character arrival token will be issued instantly.
+                {t('dashboard.noActiveBookingDesc', 'Schedule your foodgrain delivery to avoid mandi queues and guarantee minimum support price settlement. Your 6-character arrival token will be issued instantly.')}
               </p>
               <div className="pt-2 flex flex-wrap items-center gap-4 text-xs text-slate-500">
                 <span>&bull; Select crop & declared quantity</span>
@@ -305,20 +369,26 @@ export const FarmerDashboard: React.FC = () => {
 
           <div className="shrink-0 sm:self-center">
             <Link to="/farmer/booking">
-              <Button variant="primary" size="lg" className="gap-2 shadow-md">
+              <Button variant="orange" size="lg" className="gap-2 shadow-md font-semibold">
                 <CalendarPlus className="h-5 w-5" />
-                <span>Book a Procurement Slot</span>
+                <span>{t('dashboard.bookSlotCta', 'Book a Procurement Slot')}</span>
               </Button>
             </Link>
           </div>
         </motion.div>
       ) : (
-        /* DYNAMIC REAL-TIME LIVE QUEUE INTELLIGENCE CARD */
+        /* DYNAMIC REAL-TIME LIVE QUEUE & PROCUREMENT LIFECYCLE TRACKER */
         <motion.div
           initial={{ opacity: 0, y: 4 }}
           animate={{ opacity: 1, y: 0 }}
-          className="space-y-4"
+          className="space-y-6"
         >
+          <FarmerProcurementStatusTracker
+            booking={booking}
+            farmerProfile={farmerProfile}
+            onRefresh={reloadBooking}
+          />
+
           <LiveQueueIntelligenceCard
             booking={booking}
             onBookingUpdated={reloadBooking}
@@ -600,12 +670,12 @@ export const FarmerDashboard: React.FC = () => {
           <div className="flex items-center justify-between">
             <CardTitle className="text-base">Recent Operational Updates & Notifications</CardTitle>
             <Link to="/farmer/notifications" className="text-xs text-emerald-700 font-bold hover:underline">
-              View All ({MOCK_NOTIFICATIONS.length})
+              View All ({notifications.length})
             </Link>
           </div>
         </CardHeader>
         <CardContent className="divide-y divide-slate-100">
-          {MOCK_NOTIFICATIONS.map((notif) => (
+          {notifications.slice(0, 4).map((notif) => (
             <div key={notif.id} className="py-3 flex items-start justify-between gap-4">
               <div className="space-y-1">
                 <div className="flex items-center gap-2">
@@ -614,7 +684,7 @@ export const FarmerDashboard: React.FC = () => {
                     <span className="w-2 h-2 rounded-full bg-emerald-600 ring-2 ring-white" />
                   )}
                 </div>
-                <p className="text-xs text-slate-600 leading-relaxed">{notif.message}</p>
+                <p className="text-xs text-slate-600 leading-relaxed whitespace-pre-line">{notif.message}</p>
               </div>
               <span className="text-[11px] text-slate-400 shrink-0 whitespace-nowrap">
                 {notif.createdAt}

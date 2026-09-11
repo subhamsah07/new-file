@@ -4,11 +4,42 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../..
 import { Button } from '../../components/ui/Button';
 import { Badge } from '../../components/ui/Badge';
 import { MOCK_NOTIFICATIONS } from '../../data/mockData';
+import { notificationService } from '../../services/notificationService';
+import { SystemNotification } from '../../types';
 
 export const NotificationsPage: React.FC = () => {
-  const [notifications, setNotifications] = React.useState(MOCK_NOTIFICATIONS);
+  const [notifications, setNotifications] = React.useState<SystemNotification[]>([]);
+  const [isLoading, setIsLoading] = React.useState(true);
+
+  const fetchNotifications = React.useCallback(async () => {
+    try {
+      const items = await notificationService.getNotifications();
+      setNotifications(items || []);
+    } catch (err) {
+      console.warn('Error fetching notifications:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  React.useEffect(() => {
+    fetchNotifications();
+
+    const unsubscribe = notificationService.subscribeToNotifications(() => {
+      fetchNotifications();
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [fetchNotifications]);
 
   const handleMarkAllRead = () => {
+    notifications.forEach((n) => {
+      if (!n.isRead) {
+        notificationService.markAsRead(n.id);
+      }
+    });
     setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
   };
 
@@ -20,7 +51,7 @@ export const NotificationsPage: React.FC = () => {
             Operational Notifications
           </h1>
           <p className="text-sm text-slate-500 mt-0.5">
-            Arrival updates, weighbridge speed advisories, and direct benefit payment clearance notices
+            Arrival updates, weighbridge speed advisories, and procurement completion notices
           </p>
         </div>
 
@@ -32,8 +63,8 @@ export const NotificationsPage: React.FC = () => {
 
       <div className="space-y-3">
         {notifications.map((n) => {
-          const isWarning = n.type === 'DELAY' || n.type === 'LUNCH_BREAK';
-          const isSuccess = n.type === 'PAYMENT';
+          const isWarning = n.type === 'DELAY_ALERT' || (n as any).type === 'DELAY' || (n as any).type === 'LUNCH_BREAK';
+          const isSuccess = n.type === 'PAYMENT_CREDIT' || (n as any).type === 'PAYMENT' || n.title.includes('Completed');
 
           return (
             <div
@@ -73,7 +104,7 @@ export const NotificationsPage: React.FC = () => {
                         </span>
                       )}
                     </div>
-                    <p className="text-xs text-slate-600 leading-relaxed max-w-2xl">{n.message}</p>
+                    <p className="text-xs text-slate-600 leading-relaxed max-w-2xl whitespace-pre-line">{n.message}</p>
                   </div>
                 </div>
 

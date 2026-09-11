@@ -8,6 +8,8 @@ import {
   EtaCalculationResult,
 } from '../../services/queueEtaService';
 import { queueService } from '../../services/queueService';
+import { notificationService } from '../../services/notificationService';
+import { emailService } from '../../services/emailService';
 import {
   Users,
   Activity,
@@ -37,11 +39,14 @@ import { Badge } from '../../components/ui/Badge';
 interface CurrentlyProcessingFarmer {
   bookingId: string;
   token: string;
+  farmerId: string;
   farmerName: string;
   farmerMobile: string;
+  farmerEmail?: string;
   farmerDistrict: string;
   cropName: string;
   quantityQuintals: number;
+  qrIdentifier?: string;
   startedTime: string; // ISO string
   notes?: string | null;
 }
@@ -208,6 +213,7 @@ export const AdminQueue: React.FC = () => {
         .select(`
           id,
           token,
+          qr_identifier,
           farmer_id,
           centre_id,
           crop_id,
@@ -219,7 +225,7 @@ export const AdminQueue: React.FC = () => {
           assigned_end_time,
           booking_status,
           created_at,
-          profiles ( full_name, mobile, district ),
+          profiles ( full_name, mobile, district, email ),
           crops ( name )
         `)
         .eq('centre_id', selectedCentreId);
@@ -356,11 +362,14 @@ export const AdminQueue: React.FC = () => {
             currentActive = {
               bookingId: b.id,
               token: b.token,
+              farmerId: b.farmer_id,
               farmerName: fullName,
               farmerMobile: mobile,
+              farmerEmail: b.profiles?.email || '',
               farmerDistrict: district,
               cropName,
               quantityQuintals: qty,
+              qrIdentifier: b.qr_identifier,
               startedTime: startEv.event_time,
               notes: startEv.notes,
             };
@@ -585,6 +594,36 @@ export const AdminQueue: React.FC = () => {
         return;
       }
 
+      // 0. Idempotency Check: Verify if booking is already marked completed
+      const { data: existingBooking, error: checkErr } = await supabase
+        .from('bookings')
+        .select(`
+          id,
+          token,
+          qr_identifier,
+          quantity,
+          booking_status,
+          farmer_id,
+          centre_id,
+          crop_id,
+          profiles ( full_name, mobile, district, email ),
+          crops ( name ),
+          procurement_centres ( name )
+        `)
+        .eq('id', currentlyProcessing.bookingId)
+        .maybeSingle();
+
+      if (checkErr) {
+        setErrorMessage(`Failed to check booking status: ${checkErr.message}`);
+        return;
+      }
+
+      if (existingBooking?.booking_status === 'completed') {
+        setSuccessBanner(`Token ${currentlyProcessing.token} is already completed. Idempotency preserved.`);
+        await loadQueueData();
+        return;
+      }
+
       const nowIso = new Date().toISOString();
       const duration = Math.max(1, elapsedDurationMinutes || 15);
       const { data: userAuth } = await supabase.auth.getUser();
@@ -605,7 +644,7 @@ export const AdminQueue: React.FC = () => {
         return;
       }
 
-      // 2. Update bookings status
+      // 2. Update bookings status in Supabase (Authoritative persistence)
       const { error: bookingErr } = await supabase
         .from('bookings')
         .update({
@@ -619,8 +658,69 @@ export const AdminQueue: React.FC = () => {
         return;
       }
 
+      // Extract resolved details
+      const farmerId = existingBooking?.farmer_id || currentlyProcessing.farmerId;
+      const token = currentlyProcessing.token;
+      const centreName =
+        (existingBooking?.procurement_centres as any)?.name || selectedCentre?.name || 'Procurement Centre';
+      const cropName = (existingBooking?.crops as any)?.name || currentlyProcessing.cropName || 'Crop';
+      const qty = existingBooking?.quantity || currentlyProcessing.quantityQuintals || 0;
+      const qrIdentifier = existingBooking?.qr_identifier || currentlyProcessing.qrIdentifier || token;
+      const farmerProfile = existingBooking?.profiles as any;
+      const farmerEmail = farmerProfile?.email || currentlyProcessing.farmerEmail || '';
+      const farmerName = farmerProfile?.full_name || currentlyProcessing.farmerName || 'Farmer';
+
+      // 3. Create persistent in-app notification for that farmer:
+      // Title: "Procurement Completed"
+      // Message:
+      // "Your procurement has been successfully completed.
+      //
+      // Token: [Token]
+      // Centre: [Centre]
+      // Crop: [Crop]
+      // Quantity: [Quantity] Quintal"
+      if (farmerId) {
+        try {
+          const notifMessage = `Your procurement has been successfully completed.\n\nToken: ${token}\nCentre: ${centreName}\nCrop: ${cropName}\nQuantity: ${qty} Quintal`;
+
+          await notificationService.createNotification({
+            farmerId,
+            bookingId: currentlyProcessing.bookingId,
+            type: 'procurement',
+            title: 'Procurement Completed',
+            message: notifMessage,
+          });
+        } catch (notifErr) {
+          console.warn('[AdminQueue] Failed to create in-app notification:', notifErr);
+        }
+      }
+
+      // 4. Dispatch completion email (idempotent, using the same opaque QR identifier/token)
+      let emailDispatched = false;
+      if (farmerEmail) {
+        try {
+          const emailResult = await emailService.sendProcurementCompletionEmail({
+            recipientEmail: farmerEmail,
+            farmerName,
+            token,
+            centreName,
+            cropName,
+            quantityQuintals: qty,
+            bookingId: currentlyProcessing.bookingId,
+            opaqueQrIdentifier: qrIdentifier,
+          });
+          emailDispatched = emailResult.success;
+        } catch (mailErr) {
+          console.warn('[AdminQueue] Completion email dispatch error:', mailErr);
+        }
+      }
+
+      const emailStatusNotice = emailDispatched
+        ? ' Completion email dispatched.'
+        : ' (In-app notification posted. External mail transport delivery logged).';
+
       setSuccessBanner(
-        `Procurement completed successfully for Token ${currentlyProcessing.token}. Counter #1 is now clear.`
+        `Procurement completed successfully for Token ${token}.${emailStatusNotice} Counter #1 is now clear.`
       );
       await loadQueueData();
     } catch (err: any) {

@@ -20,7 +20,8 @@ import {
   CentreOperatingStatus,
   ProcurementWorkflowStatus,
   QueueEventType,
-  BookingStatus
+  BookingStatus,
+  PaymentStatus,
 } from '../types/database';
 import { DEFAULT_CENTRES } from './centreService';
 
@@ -337,7 +338,22 @@ class AdminService {
         created_at,
         profiles ( full_name, mobile, district ),
         procurement_centres!inner ( name, district, state ),
-        crops ( name )
+        crops ( name ),
+        procurement_requests (
+          id,
+          status,
+          verified_quantity,
+          configured_rate,
+          verified_rate,
+          estimated_value,
+          final_value,
+          payments (
+            id,
+            amount,
+            payment_status,
+            payment_reference
+          )
+        )
       `)
       .eq('procurement_centres.state', state)
       .order('created_at', { ascending: false });
@@ -365,33 +381,48 @@ class AdminService {
       return [];
     }
 
-    let items: AdminRequestItem[] = data.map((b: any) => ({
-      id: b.id,
-      token: b.token,
-      qrIdentifier: b.qr_identifier,
-      farmerId: b.farmer_id,
-      farmerName: b.profiles?.full_name || 'Farmer',
-      farmerMobile: b.profiles?.mobile || '',
-      farmerDistrict: b.profiles?.district || '',
-      centreId: b.centre_id,
-      centreName: b.procurement_centres?.name || 'Mandi Centre',
-      centreDistrict: b.procurement_centres?.district || '',
-      centreState: b.procurement_centres?.state || state,
-      cropId: b.crop_id,
-      cropName: b.crops?.name || 'Wheat',
-      quantityQuintals: Number(b.quantity) || 0,
-      preferredDate: b.preferred_date,
-      preferredTimeSlot: b.preferred_time_preference || 'no_preference',
-      assignedDate: b.assigned_date,
-      assignedStartTime: b.assigned_start_time,
-      assignedEndTime: b.assigned_end_time,
-      bookingStatus: b.booking_status as BookingStatus,
-      workflowStatus: 'booking',
-      ratePerQuintal: 2425,
-      estimatedValue: (Number(b.quantity) || 0) * 2425,
-      finalValue: null,
-      createdAt: b.created_at,
-    }));
+    let items: AdminRequestItem[] = data.map((b: any) => {
+      const pr = Array.isArray(b.procurement_requests)
+        ? b.procurement_requests[0]
+        : b.procurement_requests;
+      const pay = pr ? (Array.isArray(pr.payments) ? pr.payments[0] : pr.payments) : null;
+
+      const ratePerQuintal = Number(pr?.verified_rate || pr?.configured_rate) || 2425;
+      const quantityQuintals = Number(pr?.verified_quantity || b.quantity) || 0;
+      const estimatedValue = Number(pr?.estimated_value) || (Number(b.quantity) || 0) * ratePerQuintal;
+      const finalValue = pr?.final_value != null ? Number(pr.final_value) : null;
+
+      return {
+        id: b.id,
+        token: b.token,
+        qrIdentifier: b.qr_identifier,
+        farmerId: b.farmer_id,
+        farmerName: b.profiles?.full_name || 'Farmer',
+        farmerMobile: b.profiles?.mobile || '',
+        farmerDistrict: b.profiles?.district || '',
+        centreId: b.centre_id,
+        centreName: b.procurement_centres?.name || 'Mandi Centre',
+        centreDistrict: b.procurement_centres?.district || '',
+        centreState: b.procurement_centres?.state || state,
+        cropId: b.crop_id,
+        cropName: b.crops?.name || 'Wheat',
+        quantityQuintals: Number(b.quantity) || 0,
+        preferredDate: b.preferred_date,
+        preferredTimeSlot: b.preferred_time_preference || 'no_preference',
+        assignedDate: b.assigned_date,
+        assignedStartTime: b.assigned_start_time,
+        assignedEndTime: b.assigned_end_time,
+        bookingStatus: b.booking_status as BookingStatus,
+        workflowStatus: (pr?.status as ProcurementWorkflowStatus) || (b.booking_status === 'completed' ? 'procurement_completed' : 'booking'),
+        ratePerQuintal,
+        estimatedValue,
+        finalValue,
+        createdAt: b.created_at,
+        paymentStatus: pay?.payment_status || null,
+        paymentAmount: pay?.amount != null ? Number(pay.amount) : null,
+        paymentReference: pay?.payment_reference || null,
+      };
+    });
 
     if (filters?.search) {
       const q = filters.search.trim().toLowerCase();
@@ -448,7 +479,15 @@ class AdminService {
     // Get matching procurement_request if exists
     const { data: pr } = await supabase
       .from('procurement_requests')
-      .select('*')
+      .select(`
+        *,
+        payments (
+          id,
+          amount,
+          payment_status,
+          payment_reference
+        )
+      `)
       .eq('booking_id', id)
       .maybeSingle();
 
@@ -473,6 +512,8 @@ class AdminService {
         }));
       }
     }
+
+    const pay = pr ? (Array.isArray(pr.payments) ? pr.payments[0] : pr.payments) : null;
 
     const reqItem: AdminRequestItem = {
       id: b.id,
@@ -500,6 +541,9 @@ class AdminService {
       estimatedValue: Number(pr?.estimated_value) || (Number(b.quantity) || 0) * 2425,
       finalValue: pr?.final_value ? Number(pr.final_value) : null,
       createdAt: b.created_at,
+      paymentStatus: pay?.payment_status || null,
+      paymentAmount: pay?.amount != null ? Number(pay.amount) : null,
+      paymentReference: pay?.payment_reference || null,
     };
 
     return { request: reqItem, verificationRecords };
@@ -683,7 +727,84 @@ class AdminService {
 
     // Sync booking status if completed
     if (params.newStatus === 'procurement_completed' || params.newStatus === 'payment_completed') {
-      await supabase.from('bookings').update({ booking_status: 'completed' }).eq('id', params.bookingId);
+      await supabase
+        .from('bookings')
+        .update({ booking_status: 'completed', updated_at: new Date().toISOString() })
+        .eq('id', params.bookingId);
+    }
+
+    // Manage payment record & persistent notifications
+    if (params.newStatus === 'procurement_completed') {
+      const payoutAmount = updatePayload.final_value || pr.final_value || pr.estimated_value || 0;
+      if (payoutAmount > 0) {
+        await supabase.from('payments').upsert(
+          {
+            procurement_request_id: pr.id,
+            farmer_id: pr.farmer_id,
+            amount: payoutAmount,
+            payment_status: 'pending',
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'procurement_request_id' }
+        );
+      }
+
+      // Fetch booking & centre details for detailed notification
+      const { data: bData } = await supabase
+        .from('bookings')
+        .select(`
+          token,
+          procurement_centres ( name ),
+          crops ( name )
+        `)
+        .eq('id', params.bookingId)
+        .maybeSingle();
+
+      const token = bData?.token || 'N/A';
+      const centreName = (bData as any)?.procurement_centres?.name || 'Mandi Centre';
+      const cropName = (bData as any)?.crops?.name || 'Wheat';
+      const qty = params.verifiedQuantity || pr.verified_quantity || pr.submitted_quantity || 0;
+
+      await supabase.from('notifications').insert({
+        farmer_id: pr.farmer_id,
+        booking_id: params.bookingId,
+        type: 'queue',
+        title: 'Procurement Completed',
+        message: `Your procurement has been successfully completed.\n\nToken: ${token}\nCentre: ${centreName}\nCrop: ${cropName}\nQuantity: ${qty} Quintal`,
+        read: false,
+      });
+    } else if (params.newStatus === 'payment_processing') {
+      await supabase
+        .from('payments')
+        .update({ payment_status: 'processing', updated_at: new Date().toISOString() })
+        .eq('procurement_request_id', pr.id);
+
+      await supabase.from('notifications').insert({
+        farmer_id: pr.farmer_id,
+        booking_id: params.bookingId,
+        type: 'payment',
+        title: 'Payment Processing',
+        message: 'Your procurement payout is being processed via Direct Benefit Transfer (DBT).',
+        read: false,
+      });
+    } else if (params.newStatus === 'payment_completed') {
+      await supabase
+        .from('payments')
+        .update({
+          payment_status: 'completed',
+          processed_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('procurement_request_id', pr.id);
+
+      await supabase.from('notifications').insert({
+        farmer_id: pr.farmer_id,
+        booking_id: params.bookingId,
+        type: 'payment',
+        title: 'Payment Completed',
+        message: 'Your payment has been successfully disbursed to your bank account via DBT.',
+        read: false,
+      });
     }
 
     return true;
@@ -763,7 +884,8 @@ class AdminService {
         procurement_requests!inner (
           crop_id,
           submitted_quantity,
-          procurement_centres!inner ( state ),
+          verified_quantity,
+          procurement_centres!inner ( name, state ),
           crops ( name ),
           bookings ( token )
         )
@@ -783,13 +905,161 @@ class AdminService {
       farmerMobile: p.profiles?.mobile || '',
       token: p.procurement_requests?.bookings?.token || 'N/A',
       cropName: p.procurement_requests?.crops?.name || 'Wheat',
-      quantityQuintals: Number(p.procurement_requests?.submitted_quantity) || 0,
+      centreName: p.procurement_requests?.procurement_centres?.name || 'Mandi Centre',
+      quantityQuintals: Number(p.procurement_requests?.verified_quantity || p.procurement_requests?.submitted_quantity) || 0,
       amount: Number(p.amount) || 0,
       paymentStatus: p.payment_status,
       paymentReference: p.payment_reference,
       createdAt: p.created_at,
       updatedAt: p.updated_at,
     }));
+  }
+
+  /**
+   * Updates payment status and optional UTR reference for a procurement payment record.
+   * Strictly enforces state boundary isolation.
+   * Automatically updates linked procurement_requests workflow status and inserts
+   * persistent in-app notification for the farmer.
+   */
+  async updatePaymentStatus(params: {
+    paymentId: string;
+    status: PaymentStatus;
+    paymentReference?: string;
+    notes?: string;
+    adminState?: string;
+  }): Promise<{ success: boolean; error?: string }> {
+    if (!isSupabaseConfigured()) {
+      return { success: false, error: 'Database not connected.' };
+    }
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+
+      // 1. Fetch the payment record and its centre's state for state isolation check
+      const { data: payment, error: pErr } = await supabase
+        .from('payments')
+        .select(`
+          id,
+          farmer_id,
+          amount,
+          payment_status,
+          payment_reference,
+          procurement_request_id,
+          procurement_requests (
+            id,
+            booking_id,
+            crop_id,
+            submitted_quantity,
+            verified_quantity,
+            status,
+            procurement_centres ( id, name, state ),
+            crops ( name ),
+            bookings ( token )
+          )
+        `)
+        .eq('id', params.paymentId)
+        .maybeSingle();
+
+      if (pErr || !payment) {
+        return { success: false, error: 'Payment record not found.' };
+      }
+
+      const pr: any = payment.procurement_requests;
+      const centreState = pr?.procurement_centres?.state;
+
+      // Verify state boundary
+      if (params.adminState && centreState && centreState !== params.adminState) {
+        return {
+          success: false,
+          error: `Cross-State Violation: Payment belongs to ${centreState}, not ${params.adminState}.`,
+        };
+      }
+
+      // 2. Update payments table
+      const paymentUpdate: any = {
+        payment_status: params.status,
+        updated_at: new Date().toISOString(),
+      };
+
+      if (params.paymentReference !== undefined) {
+        paymentUpdate.payment_reference = params.paymentReference || null;
+      }
+      if (user?.id) {
+        paymentUpdate.processed_by = user.id;
+      }
+      if (params.status === 'completed') {
+        paymentUpdate.processed_at = new Date().toISOString();
+      }
+
+      const { error: updErr } = await supabase
+        .from('payments')
+        .update(paymentUpdate)
+        .eq('id', params.paymentId);
+
+      if (updErr) {
+        console.error('Failed to update payment status:', updErr);
+        return { success: false, error: updErr.message };
+      }
+
+      // 3. Sync procurement_requests workflow status if appropriate
+      if (pr?.id) {
+        let newPrStatus: any = null;
+        if (params.status === 'completed') {
+          newPrStatus = 'payment_completed';
+        } else if (params.status === 'processing') {
+          newPrStatus = 'payment_processing';
+        } else if (params.status === 'pending') {
+          newPrStatus = 'procurement_completed';
+        }
+
+        if (newPrStatus && pr.status !== newPrStatus) {
+          await supabase
+            .from('procurement_requests')
+            .update({ status: newPrStatus, updated_at: new Date().toISOString() })
+            .eq('id', pr.id);
+        }
+      }
+
+      // 4. Create persistent in-app notification for the farmer (Part G)
+      const farmerId = payment.farmer_id;
+      const bookingId = pr?.booking_id || null;
+      const amount = Number(payment.amount) || 0;
+      const ref = params.paymentReference || payment.payment_reference || '';
+
+      if (params.status === 'completed') {
+        await supabase.from('notifications').insert({
+          farmer_id: farmerId,
+          booking_id: bookingId,
+          type: 'payment',
+          title: 'Payment Completed',
+          message: `Your payment of ₹${amount.toLocaleString('en-IN')} has been successfully disbursed.${ref ? `\nReference (UTR): ${ref}` : ''}`,
+          read: false,
+        });
+      } else if (params.status === 'processing') {
+        await supabase.from('notifications').insert({
+          farmer_id: farmerId,
+          booking_id: bookingId,
+          type: 'payment',
+          title: 'Payment Processing',
+          message: `Your procurement payment of ₹${amount.toLocaleString('en-IN')} is being processed by the banking gateway.${ref ? `\nReference: ${ref}` : ''}`,
+          read: false,
+        });
+      } else if (params.status === 'failed') {
+        await supabase.from('notifications').insert({
+          farmer_id: farmerId,
+          booking_id: bookingId,
+          type: 'payment',
+          title: 'Payment Processing Failed',
+          message: `There was an issue processing your payment of ₹${amount.toLocaleString('en-IN')}. Please contact your procurement centre office.`,
+          read: false,
+        });
+      }
+
+      return { success: true };
+    } catch (err: any) {
+      console.error('Error updating payment status:', err);
+      return { success: false, error: err.message || 'An unexpected error occurred.' };
+    }
   }
 
   /**

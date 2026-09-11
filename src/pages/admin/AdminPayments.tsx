@@ -2,6 +2,7 @@ import * as React from 'react';
 import { useAdminAuth } from '../../contexts/AdminAuthContext';
 import { adminService } from '../../services/adminService';
 import { AdminPaymentItem } from '../../types/admin';
+import { PaymentStatus } from '../../types/database';
 import {
   CreditCard,
   Search,
@@ -12,6 +13,9 @@ import {
   AlertCircle,
   IndianRupee,
   Calendar,
+  Edit3,
+  X,
+  Check,
 } from 'lucide-react';
 
 export const AdminPayments: React.FC = () => {
@@ -20,6 +24,14 @@ export const AdminPayments: React.FC = () => {
   const [loading, setLoading] = React.useState(true);
   const [statusFilter, setStatusFilter] = React.useState('all');
   const [searchQuery, setSearchQuery] = React.useState('');
+
+  // Update Payment Modal State
+  const [selectedPayment, setSelectedPayment] = React.useState<AdminPaymentItem | null>(null);
+  const [modalStatus, setModalStatus] = React.useState<PaymentStatus>('processing');
+  const [modalUtr, setModalUtr] = React.useState('');
+  const [savingPayment, setSavingPayment] = React.useState(false);
+  const [updateError, setUpdateError] = React.useState<string | null>(null);
+  const [updateSuccess, setUpdateSuccess] = React.useState<string | null>(null);
 
   const loadPayments = async () => {
     if (!assignedState) return;
@@ -38,6 +50,50 @@ export const AdminPayments: React.FC = () => {
     loadPayments();
   }, [assignedState]);
 
+  const openUpdateModal = (p: AdminPaymentItem) => {
+    setSelectedPayment(p);
+    setModalStatus(p.paymentStatus || 'pending');
+    setModalUtr(p.paymentReference || '');
+    setUpdateError(null);
+    setUpdateSuccess(null);
+  };
+
+  const closeUpdateModal = () => {
+    setSelectedPayment(null);
+    setUpdateError(null);
+    setUpdateSuccess(null);
+  };
+
+  const handleSavePaymentStatus = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedPayment || !assignedState) return;
+
+    setSavingPayment(true);
+    setUpdateError(null);
+    try {
+      const res = await adminService.updatePaymentStatus({
+        paymentId: selectedPayment.id,
+        status: modalStatus,
+        paymentReference: modalUtr.trim() || undefined,
+        adminState: assignedState,
+      });
+
+      if (!res.success) {
+        setUpdateError(res.error || 'Failed to update payment status.');
+      } else {
+        setUpdateSuccess('Payment status updated successfully.');
+        await loadPayments();
+        setTimeout(() => {
+          closeUpdateModal();
+        }, 800);
+      }
+    } catch (err: any) {
+      setUpdateError(err.message || 'An error occurred.');
+    } finally {
+      setSavingPayment(false);
+    }
+  };
+
   const filteredPayments = React.useMemo(() => {
     return payments.filter((p) => {
       if (statusFilter !== 'all' && p.paymentStatus !== statusFilter) return false;
@@ -46,6 +102,7 @@ export const AdminPayments: React.FC = () => {
         return (
           p.farmerName.toLowerCase().includes(q) ||
           p.token.toLowerCase().includes(q) ||
+          (p.centreName && p.centreName.toLowerCase().includes(q)) ||
           (p.paymentReference && p.paymentReference.toLowerCase().includes(q))
         );
       }
@@ -159,28 +216,42 @@ export const AdminPayments: React.FC = () => {
               <thead className="bg-slate-50 text-slate-500 font-semibold border-b border-slate-200">
                 <tr>
                   <th className="py-3 px-4">Booking Token</th>
-                  <th className="py-3 px-4">Farmer Name</th>
-                  <th className="py-3 px-4">Crop / Intake</th>
+                  <th className="py-3 px-4">Farmer Details</th>
+                  <th className="py-3 px-4">Centre & Crop</th>
                   <th className="py-3 px-4">Amount (₹)</th>
                   <th className="py-3 px-4">UTR Reference</th>
                   <th className="py-3 px-4">Status</th>
-                  <th className="py-3 px-4 text-right">Date</th>
+                  <th className="py-3 px-4 text-right">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {filteredPayments.map((p) => (
                   <tr key={p.id} className="hover:bg-slate-50/70 transition">
-                    <td className="py-3.5 px-4 font-mono font-bold text-emerald-700">{p.token}</td>
-                    <td className="py-3.5 px-4 font-medium text-slate-900">{p.farmerName}</td>
                     <td className="py-3.5 px-4">
-                      <span className="font-medium text-slate-800">{p.cropName}</span>{' '}
-                      <span className="text-slate-400">({p.quantityQuintals} Qtl)</span>
+                      <div className="font-mono font-bold text-emerald-700">{p.token}</div>
+                      <div className="text-[10px] text-slate-400">
+                        {new Date(p.createdAt).toLocaleDateString()}
+                      </div>
+                    </td>
+                    <td className="py-3.5 px-4">
+                      <div className="font-medium text-slate-900">{p.farmerName}</div>
+                      {p.farmerMobile && (
+                        <div className="text-[11px] text-slate-400 font-mono">{p.farmerMobile}</div>
+                      )}
+                    </td>
+                    <td className="py-3.5 px-4">
+                      <div className="font-medium text-slate-800">
+                        {p.cropName} <span className="text-slate-400 font-normal">({p.quantityQuintals} Qtl)</span>
+                      </div>
+                      {p.centreName && (
+                        <div className="text-[11px] text-slate-400">{p.centreName}</div>
+                      )}
                     </td>
                     <td className="py-3.5 px-4 font-bold text-slate-900">
                       ₹{p.amount.toLocaleString('en-IN')}
                     </td>
                     <td className="py-3.5 px-4 font-mono text-[11px] text-slate-500">
-                      {p.paymentReference || 'Pending UTR'}
+                      {p.paymentReference || <span className="text-slate-400 italic">Pending UTR</span>}
                     </td>
                     <td className="py-3.5 px-4">
                       <span
@@ -197,8 +268,14 @@ export const AdminPayments: React.FC = () => {
                         {p.paymentStatus}
                       </span>
                     </td>
-                    <td className="py-3.5 px-4 text-right text-slate-400">
-                      {new Date(p.createdAt).toLocaleDateString()}
+                    <td className="py-3.5 px-4 text-right">
+                      <button
+                        onClick={() => openUpdateModal(p)}
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs transition"
+                      >
+                        <Edit3 className="w-3 h-3 text-slate-500" />
+                        <span>Update Status</span>
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -207,6 +284,114 @@ export const AdminPayments: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* Update Payment Modal */}
+      {selectedPayment && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-slate-200 space-y-4">
+            <div className="flex items-start justify-between">
+              <div className="flex items-center gap-2">
+                <div className="w-9 h-9 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center">
+                  <CreditCard className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-slate-900 text-base">Update Payment Status</h3>
+                  <p className="text-xs text-slate-500">
+                    Token: <span className="font-mono font-bold text-emerald-700">{selectedPayment.token}</span>
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={closeUpdateModal}
+                className="text-slate-400 hover:text-slate-600 p-1"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Payment Summary Box */}
+            <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 text-xs space-y-1.5">
+              <div className="flex justify-between">
+                <span className="text-slate-500">Farmer:</span>
+                <span className="font-semibold text-slate-900">{selectedPayment.farmerName}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Crop & Intake:</span>
+                <span className="font-medium text-slate-800">{selectedPayment.cropName} ({selectedPayment.quantityQuintals} Quintals)</span>
+              </div>
+              <div className="flex justify-between border-t border-slate-200 pt-1.5 mt-1.5">
+                <span className="text-slate-500 font-semibold">Disbursement Amount:</span>
+                <span className="font-bold text-emerald-700 text-sm">₹{selectedPayment.amount.toLocaleString('en-IN')}</span>
+              </div>
+            </div>
+
+            {updateError && (
+              <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-xs flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
+                <span>{updateError}</span>
+              </div>
+            )}
+
+            {updateSuccess && (
+              <div className="p-3 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs flex items-center gap-2">
+                <Check className="w-4 h-4 text-emerald-500" />
+                <span>{updateSuccess}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleSavePaymentStatus} className="space-y-4">
+              <div>
+                <label className="text-xs font-semibold text-slate-700 block mb-1">
+                  Payment Status:
+                </label>
+                <select
+                  value={modalStatus}
+                  onChange={(e) => setModalStatus(e.target.value as PaymentStatus)}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                >
+                  <option value="pending">Pending</option>
+                  <option value="processing">Processing (In Bank Gateway)</option>
+                  <option value="completed">Completed (DBT Disbursed)</option>
+                  <option value="failed">Failed (Bank Rejected)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="text-xs font-semibold text-slate-700 block mb-1">
+                  Bank Reference / UTR Number:
+                </label>
+                <input
+                  type="text"
+                  value={modalUtr}
+                  onChange={(e) => setModalUtr(e.target.value)}
+                  placeholder="e.g. UTR12849204821 or SBIN00294104"
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-mono text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+                <p className="text-[11px] text-slate-400 mt-1">
+                  Official bank reconciliation UTR reference code shared with the farmer.
+                </p>
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={closeUpdateModal}
+                  className="px-3.5 py-2 text-xs font-semibold text-slate-600 hover:text-slate-800"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingPayment}
+                  className="px-4 py-2 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-500 rounded-lg shadow-xs transition disabled:opacity-50"
+                >
+                  {savingPayment ? 'Updating DBT State...' : 'Save & Record'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

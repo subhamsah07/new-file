@@ -425,10 +425,10 @@ export const Register: React.FC = () => {
 
                 <Button
                   type="submit"
-                  variant="primary"
+                  variant={currentStep === totalSteps ? 'orange' : 'primary'}
                   size="md"
                   isLoading={isSubmitting}
-                  className="gap-2 shadow-xs"
+                  className="gap-2 shadow-xs font-semibold"
                 >
                   <span>
                     {currentStep === totalSteps

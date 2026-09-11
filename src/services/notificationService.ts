@@ -63,6 +63,106 @@ class NotificationService {
       }
     }
   }
+
+  /**
+   * Creates a persistent notification for a farmer.
+   * Enforces idempotency via (farmer_id, booking_id, title) to prevent duplicate notifications.
+   */
+  async createNotification(params: {
+    farmerId: string;
+    bookingId?: string;
+    type: 'booking' | 'queue' | 'delay' | 'procurement' | 'payment' | 'system';
+    title: string;
+    message: string;
+  }): Promise<SystemNotification | null> {
+    if (isSupabaseConfigured()) {
+      try {
+        // Idempotency check: avoid inserting duplicate completion notification
+        if (params.bookingId) {
+          const { data: existing } = await supabase
+            .from('notifications')
+            .select('*')
+            .eq('farmer_id', params.farmerId)
+            .eq('booking_id', params.bookingId)
+            .eq('title', params.title)
+            .maybeSingle();
+
+          if (existing) {
+            console.info(`[NotificationService] Notification "${params.title}" already exists for booking ${params.bookingId}. Idempotency preserved.`);
+            return mapDbNotificationToUi(existing);
+          }
+        }
+
+        const { data, error } = await supabase
+          .from('notifications')
+          .insert({
+            farmer_id: params.farmerId,
+            booking_id: params.bookingId || null,
+            type: params.type,
+            title: params.title,
+            message: params.message,
+            read: false,
+          })
+          .select()
+          .single();
+
+        if (error) {
+          console.error('[NotificationService] Failed to insert notification in Supabase:', error);
+        } else if (data) {
+          const newUiNotif = mapDbNotificationToUi(data);
+          this.notifications.unshift(newUiNotif);
+          return newUiNotif;
+        }
+      } catch (err) {
+        console.warn('[NotificationService] Error creating notification:', err);
+      }
+    }
+
+    // Local fallback
+    const localNotif: SystemNotification = {
+      id: `notif-${Date.now()}`,
+      recipientId: params.farmerId,
+      title: params.title,
+      message: params.message,
+      type: params.type === 'procurement' ? 'STATUS_CHANGE' : 'GENERAL_ADVISORY',
+      isRead: false,
+      createdAt: new Date().toISOString(),
+    };
+    this.notifications.unshift(localNotif);
+    return localNotif;
+  }
+
+  /**
+   * Subscribes to real-time notification events in Supabase.
+   */
+  subscribeToNotifications(onNotification: (notif?: SystemNotification) => void): () => void {
+    if (!isSupabaseConfigured()) {
+      return () => {};
+    }
+
+    const channel = supabase
+      .channel('public_notifications_channel')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'notifications',
+        },
+        (payload) => {
+          if (payload.new) {
+            onNotification(mapDbNotificationToUi(payload.new));
+          } else {
+            onNotification();
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }
 }
 
 export const notificationService = new NotificationService();

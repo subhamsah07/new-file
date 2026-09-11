@@ -95,9 +95,12 @@ export const Login: React.FC = () => {
           {/* Background photograph with dark green gradient overlay */}
           <div className="absolute inset-0 z-0">
             <img
-              src="https://images.unsplash.com/photo-1592982537447-7440770cbfc9?q=80&w=1600&auto=format&fit=crop"
-              alt="Lush green agricultural wheat field at morning"
-              className="w-full h-full object-cover opacity-35"
+              src="/pexels-hson-32954665.jpg"
+              alt="Agricultural grain procurement and harvest"
+              className="w-full h-full object-cover opacity-40"
+              onError={(e) => {
+                (e.currentTarget as HTMLImageElement).src = "https://images.unsplash.com/photo-1592982537447-7440770cbfc9?q=80&w=1600&auto=format&fit=crop";
+              }}
             />
             <div className="absolute inset-0 bg-gradient-to-tr from-emerald-950 via-emerald-900/85 to-emerald-800/80" />
           </div>
@@ -243,10 +246,10 @@ export const Login: React.FC = () => {
 
               <Button
                 type="submit"
-                variant="primary"
+                variant="orange"
                 size="lg"
                 isLoading={isLoading}
-                className="w-full justify-center gap-2 text-base font-semibold shadow-md"
+                className="w-full justify-center gap-2 text-base font-semibold shadow-md hover:shadow-lg transition-all"
               >
                 <span>{isLoading ? 'Signing In...' : 'Sign In to Portal'}</span>
                 <ArrowRight className="h-4 w-4" />

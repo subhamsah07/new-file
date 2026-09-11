@@ -78,6 +78,9 @@ export interface AdminRequestItem {
   estimatedValue: number;
   finalValue: number | null;
   createdAt: string;
+  paymentStatus?: PaymentStatus | null;
+  paymentAmount?: number | null;
+  paymentReference?: string | null;
 }
 
 export interface VerificationRecordItem {
@@ -98,6 +101,7 @@ export interface AdminPaymentItem {
   farmerMobile: string;
   token: string;
   cropName: string;
+  centreName?: string;
   quantityQuintals: number;
   amount: number;
   paymentStatus: PaymentStatus;
