@@ -4,7 +4,6 @@
  */
 
 import { SystemNotification } from '../types';
-import { MOCK_NOTIFICATIONS } from '../data/mockData';
 import { isSupabaseConfigured, supabase } from '../lib/supabase';
 
 function mapDbNotificationToUi(n: any): SystemNotification {
@@ -26,7 +25,9 @@ function mapDbNotificationToUi(n: any): SystemNotification {
 }
 
 class NotificationService {
-  private notifications: SystemNotification[] = [...MOCK_NOTIFICATIONS];
+  private notifications: SystemNotification[] = [];
+  private listeners: Set<(notif?: SystemNotification) => void> = new Set();
+  private channel: any = null;
 
   async getNotifications(): Promise<SystemNotification[]> {
     if (isSupabaseConfigured()) {
@@ -39,12 +40,12 @@ class NotificationService {
             .eq('farmer_id', user.id)
             .order('created_at', { ascending: false });
 
-          if (!error && data && data.length > 0) {
+          if (!error && data) {
             return data.map(mapDbNotificationToUi);
           }
         }
       } catch (err) {
-        console.warn('Supabase notifications lookup fallback', err);
+        console.warn('Supabase notifications lookup error:', err);
       }
     }
     return [...this.notifications];
@@ -134,33 +135,47 @@ class NotificationService {
 
   /**
    * Subscribes to real-time notification events in Supabase.
+   * Centralized subscriber manager to avoid duplicate channel creation and
+   * "cannot add postgres_changes callbacks after subscribe()" errors.
    */
   subscribeToNotifications(onNotification: (notif?: SystemNotification) => void): () => void {
-    if (!isSupabaseConfigured()) {
-      return () => {};
+    this.listeners.add(onNotification);
+
+    if (!this.channel && isSupabaseConfigured()) {
+      const channelId = `notifications-channel-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      this.channel = supabase
+        .channel(channelId)
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'notifications',
+          },
+          (payload) => {
+            const notif = payload.new ? mapDbNotificationToUi(payload.new) : undefined;
+            this.listeners.forEach((listener) => {
+              try {
+                listener(notif);
+              } catch (err) {
+                console.warn('[NotificationService] Error executing notification listener:', err);
+              }
+            });
+          }
+        )
+        .subscribe();
     }
 
-    const channel = supabase
-      .channel('public_notifications_channel')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'notifications',
-        },
-        (payload) => {
-          if (payload.new) {
-            onNotification(mapDbNotificationToUi(payload.new));
-          } else {
-            onNotification();
-          }
-        }
-      )
-      .subscribe();
-
     return () => {
-      supabase.removeChannel(channel);
+      this.listeners.delete(onNotification);
+      if (this.listeners.size === 0 && this.channel) {
+        try {
+          supabase.removeChannel(this.channel);
+        } catch {
+          // noop
+        }
+        this.channel = null;
+      }
     };
   }
 }

@@ -14,6 +14,7 @@ import { isSupabaseConfigured, supabase } from '../lib/supabase';
 import { QueueEventType } from '../types/database';
 import { ProcurementBooking } from '../types';
 import { calculateAverageProcessingTime, estimateWaitTimeForWaitingPosition } from './queueEtaService';
+import { notificationService } from './notificationService';
 import {
   computeQueueIntelligence,
   QueueIntelligenceResult,
@@ -89,6 +90,7 @@ interface LocalQueueStore {
 class QueueService {
   private localStores: Map<string, LocalQueueStore> = new Map();
   private subscribers: Map<string, Set<(state: CentreOperationalQueueState) => void>> = new Map();
+  private realtimeChannels: Map<string, any> = new Map();
 
   constructor() {
     // Seed initial realistic operational data for the primary test mandi
@@ -567,7 +569,12 @@ class QueueService {
           .update({ booking_status: 'completed', updated_at: new Date().toISOString() })
           .eq('token', clean);
 
-        const { data: b } = await supabase.from('bookings').select('id').eq('token', clean).maybeSingle();
+        const { data: b } = await supabase
+          .from('bookings')
+          .select('id, farmer_id, quantity, crops(name), procurement_centres(name)')
+          .eq('token', clean)
+          .maybeSingle();
+
         await supabase.from('queue_events').insert({
           booking_id: b?.id || null,
           centre_id: centreId,
@@ -576,6 +583,19 @@ class QueueService {
           notes: `Weighment completed in ${duration} minutes for Token ${clean}`,
           event_time: new Date().toISOString(),
         });
+
+        if (b?.farmer_id) {
+          const centreName = (b as any)?.procurement_centres?.name || 'Mandi Centre';
+          const cropName = (b as any)?.crops?.name || 'Wheat';
+          const qty = b.quantity || 0;
+          await notificationService.createNotification({
+            farmerId: b.farmer_id,
+            bookingId: b.id,
+            type: 'procurement',
+            title: 'Procurement Completed',
+            message: `Your procurement has been successfully completed.\n\nToken: ${clean}\nCentre: ${centreName}\nCrop: ${cropName}\nQuantity: ${qty} Quintal`,
+          });
+        }
       } catch (err) {
         console.warn('Supabase completeProcessing notice:', err);
       }
@@ -713,6 +733,8 @@ class QueueService {
   /**
    * Subscribes to live queue state changes.
    * Combines Supabase Realtime channel + local reactive notification.
+   * Ensures only ONE Realtime channel is active per centre, with all listeners
+   * registered before subscribe() is called.
    */
   subscribeToCentreQueue(
     centreId: string,
@@ -726,27 +748,27 @@ class QueueService {
     // Initial state trigger
     this.getOperationalQueueState(centreId).then(callback);
 
-    let supabaseChannel: any = null;
-
-    if (isSupabaseConfigured()) {
+    if (isSupabaseConfigured() && !this.realtimeChannels.has(centreId)) {
       try {
-        supabaseChannel = supabase
+        const channel = supabase
           .channel(`mandi-queue-${centreId}`)
           .on(
             'postgres_changes',
             { event: '*', schema: 'public', table: 'queue_events', filter: `centre_id=eq.${centreId}` },
             () => {
-              this.getOperationalQueueState(centreId).then(callback);
+              this.notifySubscribers(centreId);
             }
           )
           .on(
             'postgres_changes',
             { event: '*', schema: 'public', table: 'bookings', filter: `centre_id=eq.${centreId}` },
             () => {
-              this.getOperationalQueueState(centreId).then(callback);
+              this.notifySubscribers(centreId);
             }
           )
           .subscribe();
+
+        this.realtimeChannels.set(centreId, channel);
       } catch (err) {
         console.warn('Supabase Realtime subscription notice:', err);
       }
@@ -756,12 +778,40 @@ class QueueService {
       const subs = this.subscribers.get(centreId);
       if (subs) {
         subs.delete(callback);
+        if (subs.size === 0) {
+          this.subscribers.delete(centreId);
+          const ch = this.realtimeChannels.get(centreId);
+          if (ch && isSupabaseConfigured()) {
+            try {
+              supabase.removeChannel(ch);
+            } catch {
+              /* noop */
+            }
+          }
+          this.realtimeChannels.delete(centreId);
+        }
       }
-      if (supabaseChannel && isSupabaseConfigured()) {
-        try {
-          supabase.removeChannel(supabaseChannel);
-        } catch {
-          /* noop */
+    };
+  }
+
+  /**
+   * Subscribes strictly to local in-memory store changes.
+   */
+  subscribeToLocalEvents(
+    centreId: string,
+    callback: (state: CentreOperationalQueueState) => void
+  ): () => void {
+    if (!this.subscribers.has(centreId)) {
+      this.subscribers.set(centreId, new Set());
+    }
+    this.subscribers.get(centreId)!.add(callback);
+
+    return () => {
+      const subs = this.subscribers.get(centreId);
+      if (subs) {
+        subs.delete(callback);
+        if (subs.size === 0) {
+          this.subscribers.delete(centreId);
         }
       }
     };
@@ -994,59 +1044,21 @@ class QueueService {
 
   /**
    * Subscribes to live telemetry updates for a specific farmer's booking.
-   * Realtime reactive listeners for queue_events, bookings, and local store.
+   * Reuses the managed centre queue listener (combines Supabase Realtime + local store).
    */
   subscribeToFarmerLiveTelemetry(
     booking: ProcurementBooking,
     callback: (telemetry: FarmerLiveTelemetry) => void
   ): () => void {
     const centreId = booking.centreId;
-    const cleanToken = (booking.token || '').trim().toUpperCase();
 
     // Trigger immediate evaluation
     this.getFarmerLiveTelemetry(booking).then(callback);
 
-    let supabaseChannel: any = null;
-
-    if (isSupabaseConfigured()) {
-      try {
-        supabaseChannel = supabase
-          .channel(`farmer-telemetry-${centreId}-${cleanToken}-${Date.now()}`)
-          .on(
-            'postgres_changes',
-            { event: '*', schema: 'public', table: 'queue_events', filter: `centre_id=eq.${centreId}` },
-            () => {
-              this.getFarmerLiveTelemetry(booking).then(callback);
-            }
-          )
-          .on(
-            'postgres_changes',
-            { event: '*', schema: 'public', table: 'bookings', filter: `centre_id=eq.${centreId}` },
-            () => {
-              this.getFarmerLiveTelemetry(booking).then(callback);
-            }
-          )
-          .subscribe();
-      } catch (err) {
-        console.warn('Supabase Realtime subscription notice for farmer telemetry:', err);
-      }
-    }
-
-    // Local reactive notification listener
-    const localUnsub = this.subscribeToCentreQueue(centreId, () => {
+    // Subscribe via the singleton centre queue listener
+    return this.subscribeToCentreQueue(centreId, () => {
       this.getFarmerLiveTelemetry(booking).then(callback);
     });
-
-    return () => {
-      localUnsub();
-      if (supabaseChannel && isSupabaseConfigured()) {
-        try {
-          supabase.removeChannel(supabaseChannel);
-        } catch {
-          /* noop */
-        }
-      }
-    };
   }
 }
 

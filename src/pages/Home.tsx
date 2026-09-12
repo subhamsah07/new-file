@@ -116,54 +116,54 @@ export const Home: React.FC = () => {
       title: t('landing.flowBook', 'Slot Booking'),
       desc: 'Choose your crop, quantity, and convenient delivery date.',
       icon: CalendarPlus,
-      colorClass: 'bg-blue-500 text-white',
-      badgeBg: 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300 border-blue-200 dark:border-blue-800',
-      glowBorder: 'hover:border-blue-400 dark:hover:border-blue-600',
+      colorClass: 'bg-blue-600 text-white',
+      badgeBg: 'bg-blue-100 text-blue-950 dark:bg-blue-950 dark:text-blue-200 border-blue-300 dark:border-blue-800',
+      glowBorder: 'hover:border-blue-500',
     },
     {
       stepNumber: '02',
       title: t('landing.flowScheduling', 'Smart Scheduling'),
       desc: 'Dynamic algorithm calculates gate window to prevent overcrowding.',
       icon: Zap,
-      colorClass: 'bg-violet-500 text-white',
-      badgeBg: 'bg-violet-100 text-violet-800 dark:bg-violet-950 dark:text-violet-300 border-violet-200 dark:border-violet-800',
-      glowBorder: 'hover:border-violet-400 dark:hover:border-violet-600',
+      colorClass: 'bg-violet-600 text-white',
+      badgeBg: 'bg-violet-100 text-violet-950 dark:bg-violet-950 dark:text-violet-200 border-violet-300 dark:border-violet-800',
+      glowBorder: 'hover:border-violet-500',
     },
     {
       stepNumber: '03',
       title: t('landing.flowToken', 'Digital Token'),
       desc: 'Instant 6-digit gate code and secure QR pass delivered to phone.',
       icon: QrCode,
-      colorClass: 'bg-amber-500 text-white',
-      badgeBg: 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border-amber-200 dark:border-amber-800',
-      glowBorder: 'hover:border-amber-400 dark:hover:border-amber-600',
+      colorClass: 'bg-amber-600 text-white',
+      badgeBg: 'bg-amber-100 text-amber-950 dark:bg-amber-950 dark:text-amber-200 border-amber-300 dark:border-amber-800',
+      glowBorder: 'hover:border-amber-500',
     },
     {
       stepNumber: '04',
       title: t('landing.flowCheckIn', 'Mandi Check-In'),
       desc: 'Seamless entry scan at weighbridge gate without overnight waiting.',
       icon: Truck,
-      colorClass: 'bg-emerald-500 text-white',
-      badgeBg: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800',
-      glowBorder: 'hover:border-emerald-400 dark:hover:border-emerald-600',
+      colorClass: 'bg-emerald-600 text-white',
+      badgeBg: 'bg-emerald-100 text-emerald-950 dark:bg-emerald-950 dark:text-emerald-200 border-emerald-300 dark:border-emerald-800',
+      glowBorder: 'hover:border-emerald-500',
     },
     {
       stepNumber: '05',
       title: t('landing.flowProcurement', 'Weighing & Quality'),
       desc: 'Precise electronic scale reading, moisture test, and digital J-Form.',
       icon: Scale,
-      colorClass: 'bg-cyan-500 text-white',
-      badgeBg: 'bg-cyan-100 text-cyan-800 dark:bg-cyan-950 dark:text-cyan-300 border-cyan-200 dark:border-cyan-800',
-      glowBorder: 'hover:border-cyan-400 dark:hover:border-cyan-600',
+      colorClass: 'bg-cyan-600 text-white',
+      badgeBg: 'bg-cyan-100 text-cyan-950 dark:bg-cyan-950 dark:text-cyan-200 border-cyan-300 dark:border-cyan-800',
+      glowBorder: 'hover:border-cyan-500',
     },
     {
       stepNumber: '06',
       title: t('landing.flowPayment', 'Direct Bank Payout'),
       desc: 'MSP transfer deposited directly via DBT into verified account.',
       icon: CreditCard,
-      colorClass: 'bg-rose-500 text-white',
-      badgeBg: 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300 border-rose-200 dark:border-rose-800',
-      glowBorder: 'hover:border-rose-400 dark:hover:border-rose-600',
+      colorClass: 'bg-rose-600 text-white',
+      badgeBg: 'bg-rose-100 text-rose-950 dark:bg-rose-950 dark:text-rose-200 border-rose-300 dark:border-rose-800',
+      glowBorder: 'hover:border-rose-500',
     },
   ];
 
@@ -177,8 +177,8 @@ export const Home: React.FC = () => {
       ),
       icon: Clock,
       stat: '75% Faster',
-      iconBg: 'bg-amber-100 dark:bg-amber-950/70 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-800',
-      statColor: 'text-amber-600 dark:text-amber-400',
+      iconBg: 'bg-amber-100 dark:bg-amber-950/70 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800',
+      statColor: 'text-amber-700 dark:text-amber-400',
     },
     {
       title: t('landing.benefit2Title', 'Transparent Queue'),
@@ -188,8 +188,8 @@ export const Home: React.FC = () => {
       ),
       icon: ShieldCheck,
       stat: '100% Fair',
-      iconBg: 'bg-emerald-100 dark:bg-emerald-950/70 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800',
-      statColor: 'text-emerald-600 dark:text-emerald-400',
+      iconBg: 'bg-emerald-100 dark:bg-emerald-950/70 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800',
+      statColor: 'text-emerald-700 dark:text-emerald-400',
     },
     {
       title: t('landing.benefit3Title', 'Real-Time Updates'),
@@ -199,8 +199,8 @@ export const Home: React.FC = () => {
       ),
       icon: TrendingUp,
       stat: 'Live ETA',
-      iconBg: 'bg-blue-100 dark:bg-blue-950/70 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-800',
-      statColor: 'text-blue-600 dark:text-blue-400',
+      iconBg: 'bg-blue-100 dark:bg-blue-950/70 text-blue-800 dark:text-blue-300 border border-blue-300 dark:border-blue-800',
+      statColor: 'text-blue-700 dark:text-blue-400',
     },
     {
       title: t('landing.benefit4Title', 'Hassle-Free Procurement'),
@@ -210,8 +210,8 @@ export const Home: React.FC = () => {
       ),
       icon: CheckCircle2,
       stat: 'Paperless',
-      iconBg: 'bg-violet-100 dark:bg-violet-950/70 text-violet-600 dark:text-violet-400 border border-violet-200 dark:border-violet-800',
-      statColor: 'text-violet-600 dark:text-violet-400',
+      iconBg: 'bg-violet-100 dark:bg-violet-950/70 text-violet-800 dark:text-violet-300 border border-violet-300 dark:border-violet-800',
+      statColor: 'text-violet-700 dark:text-violet-400',
     },
     {
       title: t('landing.benefit5Title', 'Payment Clarity'),
@@ -221,8 +221,8 @@ export const Home: React.FC = () => {
       ),
       icon: CreditCard,
       stat: 'Direct Bank Credit',
-      iconBg: 'bg-teal-100 dark:bg-teal-950/70 text-teal-600 dark:text-teal-400 border border-teal-200 dark:border-teal-800',
-      statColor: 'text-teal-600 dark:text-teal-400',
+      iconBg: 'bg-teal-100 dark:bg-teal-950/70 text-teal-800 dark:text-teal-300 border border-teal-300 dark:border-teal-800',
+      statColor: 'text-teal-700 dark:text-teal-400',
     },
     {
       title: t('landing.benefit6Title', 'Zero Middlemen'),
@@ -232,8 +232,8 @@ export const Home: React.FC = () => {
       ),
       icon: UserCheck,
       stat: '100% Direct MSP',
-      iconBg: 'bg-rose-100 dark:bg-rose-950/70 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800',
-      statColor: 'text-rose-600 dark:text-rose-400',
+      iconBg: 'bg-rose-100 dark:bg-rose-950/70 text-rose-800 dark:text-rose-300 border border-rose-300 dark:border-rose-800',
+      statColor: 'text-rose-700 dark:text-rose-400',
     },
   ];
 
@@ -320,10 +320,14 @@ export const Home: React.FC = () => {
               </div>
 
               {/* Primary Hero Headline */}
-              <h1 className="text-3xl sm:text-4xl md:text-5xl font-extrabold tracking-tight leading-[1.15] mb-4 text-slate-950 dark:text-white">
+              <h1
+                className={`text-3xl sm:text-4xl md:text-5xl font-black tracking-tight leading-[1.15] mb-4 ${
+                  darkMode ? 'text-white' : 'text-slate-950'
+                }`}
+              >
                 {t(
                   'landing.heroHeadline',
-                  'Predictable Mandi Scheduling. Complete Transparency from Arrival to Payout.'
+                  'Smart Mandi Scheduling. Transparent From Arrival to Payout.'
                 )}
               </h1>
 
@@ -335,7 +339,7 @@ export const Home: React.FC = () => {
               >
                 {t(
                   'landing.heroSubtitle',
-                  'Eliminate 14-hour mandi queues. SmartProcure assigns precise gate arrival windows, monitors live queue velocity, and guarantees transparent MSP settlements directly to your bank account.'
+                  'Eliminate hours & days of mandi queues. SmartProcure assigns precise gate arrival windows, monitors live queue velocity, and guarantees transparent MSP settlements directly to your bank account.'
                 )}
               </p>
             </div>
@@ -441,13 +445,27 @@ export const Home: React.FC = () => {
         >
           <div className="max-w-7xl mx-auto px-4 sm:px-6">
             <div className="text-center max-w-3xl mx-auto mb-12 sm:mb-16">
-              <span className="inline-block text-xs font-bold uppercase tracking-wider px-3 py-1 rounded-full bg-amber-100 dark:bg-amber-950/80 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800 mb-2">
+              <span
+                className={`inline-block text-xs font-extrabold uppercase tracking-wider px-3.5 py-1 rounded-full border mb-2 shadow-2xs ${
+                  darkMode
+                    ? 'bg-amber-950/90 text-amber-300 border-amber-700'
+                    : 'bg-amber-100 text-amber-950 border-amber-300'
+                }`}
+              >
                 Orange & Gold Harvest Workflow
               </span>
-              <h2 className="text-2xl sm:text-3xl md:text-4xl font-extrabold tracking-tight mt-1 mb-3">
+              <h2
+                className={`text-2xl sm:text-3xl md:text-4xl font-black tracking-tight mt-1 mb-3 ${
+                  darkMode ? 'text-white' : 'text-slate-950'
+                }`}
+              >
                 {t('landing.howToUseTitle', 'How to Use SmartProcure')}
               </h2>
-              <p className={`text-sm sm:text-base ${darkMode ? 'text-slate-400' : 'text-slate-600'}`}>
+              <p
+                className={`text-sm sm:text-base font-semibold ${
+                  darkMode ? 'text-slate-300' : 'text-slate-800'
+                }`}
+              >
                 {t(
                   'landing.howToUseSubtitle',
                   'A transparent 8-step journey from home registration to direct bank payout.'
@@ -470,18 +488,34 @@ export const Home: React.FC = () => {
                   >
                     {/* Top Row: Orange/Yellow Step Badge & Icon */}
                     <div className="flex items-center justify-between mb-4">
-                      <span className="font-mono text-xs font-extrabold px-2.5 py-1 rounded-md bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-xs">
+                      <span className="font-mono text-xs font-black px-2.5 py-1 rounded-md bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-xs">
                         Step 0{step.num}
                       </span>
-                      <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-gradient-to-br from-amber-100 to-orange-100 dark:from-amber-950/80 dark:to-orange-950/80 border border-amber-300/80 dark:border-amber-800 text-orange-600 dark:text-amber-400 shadow-2xs group-hover:scale-105 transition-transform">
+                      <div
+                        className={`w-10 h-10 rounded-xl flex items-center justify-center border shadow-2xs group-hover:scale-105 transition-transform ${
+                          darkMode
+                            ? 'bg-amber-950/80 border-amber-800 text-amber-400'
+                            : 'bg-amber-100 border-amber-300 text-amber-900'
+                        }`}
+                      >
                         <IconComponent className="h-5 w-5" />
                       </div>
                     </div>
 
-                    <h3 className="text-base font-bold mb-1.5 text-slate-900 dark:text-slate-100 group-hover:text-amber-600 dark:group-hover:text-amber-400 transition-colors">
+                    <h3
+                      className={`text-base font-bold mb-1.5 transition-colors ${
+                        darkMode
+                          ? 'text-white group-hover:text-amber-400'
+                          : 'text-slate-950 group-hover:text-amber-700'
+                      }`}
+                    >
                       {step.title}
                     </h3>
-                    <p className={`text-xs leading-relaxed ${darkMode ? 'text-slate-400' : 'text-slate-600'}`}>
+                    <p
+                      className={`text-xs leading-relaxed font-semibold ${
+                        darkMode ? 'text-slate-300' : 'text-slate-800'
+                      }`}
+                    >
                       {step.desc}
                     </p>
                   </div>
@@ -500,13 +534,27 @@ export const Home: React.FC = () => {
         >
           <div className="max-w-7xl mx-auto px-4 sm:px-6">
             <div className="text-center max-w-3xl mx-auto mb-12 sm:mb-16">
-              <span className="text-xs font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
+              <span
+                className={`text-xs font-extrabold uppercase tracking-wider px-3.5 py-1 rounded-full border inline-block mb-2 ${
+                  darkMode
+                    ? 'text-emerald-400 bg-emerald-950/60 border-emerald-800'
+                    : 'text-emerald-950 bg-emerald-100 border-emerald-300'
+                }`}
+              >
                 Process Flowchart
               </span>
-              <h2 className="text-2xl sm:text-3xl md:text-4xl font-extrabold tracking-tight mt-1 mb-3">
+              <h2
+                className={`text-2xl sm:text-3xl md:text-4xl font-black tracking-tight mt-1 mb-3 ${
+                  darkMode ? 'text-white' : 'text-slate-950'
+                }`}
+              >
                 {t('landing.howItWorksTitle', 'How SmartProcure Works')}
               </h2>
-              <p className={`text-sm sm:text-base ${darkMode ? 'text-slate-400' : 'text-slate-600'}`}>
+              <p
+                className={`text-sm sm:text-base font-semibold ${
+                  darkMode ? 'text-slate-300' : 'text-slate-800'
+                }`}
+              >
                 {t(
                   'landing.howItWorksSubtitle',
                   'A synchronized digital pipeline connecting farmers directly with government procurement mandis.'
@@ -524,7 +572,7 @@ export const Home: React.FC = () => {
                     className={`relative p-6 rounded-2xl border transition-all duration-200 hover:-translate-y-1 ${step.glowBorder} ${
                       darkMode
                         ? 'bg-slate-900 border-slate-800 hover:shadow-lg'
-                        : 'bg-white border-slate-200 shadow-2xs hover:shadow-md'
+                        : 'bg-white border-slate-300 shadow-2xs hover:shadow-md'
                     }`}
                   >
                     {/* Top Row: Colorful Logo Icon & Step Number */}
@@ -538,17 +586,25 @@ export const Home: React.FC = () => {
                           Phase {step.stepNumber}
                         </span>
                         {idx < 5 && (
-                          <span className="hidden lg:inline-block text-slate-300 dark:text-slate-700">
+                          <span className={`hidden lg:inline-block ${darkMode ? 'text-slate-600' : 'text-slate-400'}`}>
                             <ArrowRight className="h-4 w-4" />
                           </span>
                         )}
                       </div>
                     </div>
 
-                    <h3 className="text-lg font-bold mb-2 text-slate-900 dark:text-slate-100">
+                    <h3
+                      className={`text-lg font-bold mb-2 ${
+                        darkMode ? 'text-white' : 'text-slate-950'
+                      }`}
+                    >
                       {step.title}
                     </h3>
-                    <p className={`text-xs sm:text-sm leading-relaxed ${darkMode ? 'text-slate-400' : 'text-slate-600'}`}>
+                    <p
+                      className={`text-xs sm:text-sm leading-relaxed font-semibold ${
+                        darkMode ? 'text-slate-300' : 'text-slate-800'
+                      }`}
+                    >
                       {step.desc}
                     </p>
                   </div>
@@ -567,13 +623,27 @@ export const Home: React.FC = () => {
         >
           <div className="max-w-7xl mx-auto px-4 sm:px-6">
             <div className="text-center max-w-3xl mx-auto mb-12 sm:mb-16">
-              <span className="text-xs font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
+              <span
+                className={`text-xs font-extrabold uppercase tracking-wider px-3.5 py-1 rounded-full border inline-block mb-2 ${
+                  darkMode
+                    ? 'text-emerald-400 bg-emerald-950/60 border-emerald-800'
+                    : 'text-emerald-950 bg-emerald-100 border-emerald-300'
+                }`}
+              >
                 Core Advantages
               </span>
-              <h2 className="text-2xl sm:text-3xl md:text-4xl font-extrabold tracking-tight mt-1 mb-3">
+              <h2
+                className={`text-2xl sm:text-3xl md:text-4xl font-black tracking-tight mt-1 mb-3 ${
+                  darkMode ? 'text-white' : 'text-slate-950'
+                }`}
+              >
                 {t('landing.whyTitle', 'Why SmartProcure?')}
               </h2>
-              <p className={`text-sm sm:text-base ${darkMode ? 'text-slate-400' : 'text-slate-600'}`}>
+              <p
+                className={`text-sm sm:text-base font-semibold ${
+                  darkMode ? 'text-slate-300' : 'text-slate-800'
+                }`}
+              >
                 {t(
                   'landing.whySubtitle',
                   'Engineered specifically to dismantle mandi congestion and restore dignity to farmers.'
@@ -591,7 +661,7 @@ export const Home: React.FC = () => {
                     className={`p-6 rounded-2xl border flex flex-col justify-between transition-all duration-200 hover:-translate-y-1 ${
                       darkMode
                         ? 'bg-slate-900 border-slate-800 hover:border-slate-700 hover:shadow-md'
-                        : 'bg-[#FAFAF9] border-slate-200 hover:border-slate-300 hover:shadow-md'
+                        : 'bg-[#F8FAFC] border-slate-300 hover:border-slate-400 hover:shadow-md'
                     }`}
                   >
                     <div>
@@ -600,17 +670,31 @@ export const Home: React.FC = () => {
                         <IconComponent className="h-6 w-6" />
                       </div>
 
-                      <h3 className="text-lg font-bold mb-2 text-slate-900 dark:text-slate-100">{b.title}</h3>
-                      <p className={`text-xs sm:text-sm leading-relaxed ${darkMode ? 'text-slate-400' : 'text-slate-600'}`}>
+                      <h3
+                        className={`text-lg font-bold mb-2 ${
+                          darkMode ? 'text-white' : 'text-slate-950'
+                        }`}
+                      >
+                        {b.title}
+                      </h3>
+                      <p
+                        className={`text-xs sm:text-sm leading-relaxed font-semibold ${
+                          darkMode ? 'text-slate-300' : 'text-slate-800'
+                        }`}
+                      >
                         {b.desc}
                       </p>
                     </div>
 
-                    <div className="pt-5 mt-4 border-t border-slate-200/80 dark:border-slate-800 flex items-center justify-between">
-                      <span className={`text-xs font-bold ${b.statColor}`}>
+                    <div
+                      className={`pt-5 mt-4 border-t flex items-center justify-between ${
+                        darkMode ? 'border-slate-800' : 'border-slate-200'
+                      }`}
+                    >
+                      <span className={`text-xs font-black ${b.statColor}`}>
                         {b.stat}
                       </span>
-                      <CheckCircle2 className="h-4 w-4 text-slate-300 dark:text-slate-700" />
+                      <CheckCircle2 className={`h-4 w-4 ${darkMode ? 'text-slate-600' : 'text-slate-400'}`} />
                     </div>
                   </div>
                 );
@@ -628,13 +712,27 @@ export const Home: React.FC = () => {
         >
           <div className="max-w-4xl mx-auto px-4 sm:px-6">
             <div className="text-center max-w-2xl mx-auto mb-12">
-              <span className="text-xs font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
+              <span
+                className={`text-xs font-extrabold uppercase tracking-wider px-3.5 py-1 rounded-full border inline-block mb-2 ${
+                  darkMode
+                    ? 'text-emerald-400 bg-emerald-950/60 border-emerald-800'
+                    : 'text-emerald-950 bg-emerald-100 border-emerald-300'
+                }`}
+              >
                 Got Questions?
               </span>
-              <h2 className="text-2xl sm:text-3xl md:text-4xl font-extrabold tracking-tight mt-1 mb-3">
+              <h2
+                className={`text-2xl sm:text-3xl md:text-4xl font-black tracking-tight mt-1 mb-3 ${
+                  darkMode ? 'text-white' : 'text-slate-950'
+                }`}
+              >
                 {t('landing.faqTitle', 'Frequently Asked Questions')}
               </h2>
-              <p className={`text-sm sm:text-base ${darkMode ? 'text-slate-400' : 'text-slate-600'}`}>
+              <p
+                className={`text-sm sm:text-base font-semibold ${
+                  darkMode ? 'text-slate-300' : 'text-slate-800'
+                }`}
+              >
                 {t(
                   'landing.faqSubtitle',
                   'Everything you need to know about slot booking, token passes, and payout verification.'
@@ -652,16 +750,20 @@ export const Home: React.FC = () => {
                     className={`rounded-xl border transition-colors ${
                       darkMode
                         ? 'bg-slate-900/90 border-slate-800'
-                        : 'bg-white border-slate-200/90 shadow-2xs'
+                        : 'bg-white border-slate-300 shadow-2xs'
                     }`}
                   >
                     <button
                       type="button"
                       onClick={() => setOpenFaq(isOpen ? null : idx)}
-                      className="w-full text-left p-4 sm:p-5 flex items-center justify-between gap-4 font-semibold text-sm sm:text-base cursor-pointer focus:outline-hidden"
+                      className={`w-full text-left p-4 sm:p-5 flex items-center justify-between gap-4 font-bold text-sm sm:text-base cursor-pointer focus:outline-hidden ${
+                        darkMode ? 'text-white' : 'text-slate-950'
+                      }`}
                     >
-                      <span className={isOpen ? 'text-emerald-600 dark:text-emerald-400' : ''}>{faq.q}</span>
-                      <div className="shrink-0 text-slate-400">
+                      <span className={isOpen ? (darkMode ? 'text-emerald-400' : 'text-emerald-700') : ''}>
+                        {faq.q}
+                      </span>
+                      <div className={`shrink-0 ${darkMode ? 'text-slate-400' : 'text-slate-600'}`}>
                         {isOpen ? <ChevronUp className="h-5 w-5" /> : <ChevronDown className="h-5 w-5" />}
                       </div>
                     </button>
@@ -676,10 +778,10 @@ export const Home: React.FC = () => {
                           className="overflow-hidden"
                         >
                           <div
-                            className={`px-4 sm:px-5 pb-5 pt-1 text-xs sm:text-sm leading-relaxed border-t ${
+                            className={`px-4 sm:px-5 pb-5 pt-1 text-xs sm:text-sm leading-relaxed border-t font-semibold ${
                               darkMode
                                 ? 'border-slate-800 text-slate-300'
-                                : 'border-slate-100 text-slate-600'
+                                : 'border-slate-200 text-slate-800'
                             }`}
                           >
                             {faq.a}
@@ -712,10 +814,18 @@ export const Home: React.FC = () => {
               <div className="w-12 h-12 mx-auto mb-4 rounded-xl bg-emerald-100 dark:bg-emerald-950 flex items-center justify-center text-emerald-700 dark:text-emerald-300">
                 <Mail className="h-6 w-6" />
               </div>
-              <h3 className="text-xl sm:text-2xl font-bold mb-2">
+              <h3
+                className={`text-xl sm:text-2xl font-black mb-2 ${
+                  darkMode ? 'text-white' : 'text-slate-950'
+                }`}
+              >
                 {t('landing.contactTitle', 'Contact Us')}
               </h3>
-              <p className={`text-xs sm:text-sm max-w-md mx-auto mb-5 ${darkMode ? 'text-slate-400' : 'text-slate-600'}`}>
+              <p
+                className={`text-xs sm:text-sm max-w-md mx-auto mb-5 font-semibold ${
+                  darkMode ? 'text-slate-300' : 'text-slate-800'
+                }`}
+              >
                 {t(
                   'landing.contactSubtitle',
                   'Have questions, feedback, or need technical assistance with mandi scheduling?'
@@ -724,7 +834,7 @@ export const Home: React.FC = () => {
 
               <a
                 href="mailto:smartprocurementsystem@gmail.com"
-                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl font-semibold text-xs sm:text-sm bg-emerald-600 hover:bg-emerald-700 text-white transition-colors shadow-2xs"
+                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-xs sm:text-sm bg-emerald-600 hover:bg-emerald-700 text-white transition-colors shadow-2xs"
               >
                 <Mail className="h-4 w-4" />
                 <span>smartprocurementsystem@gmail.com</span>
@@ -743,16 +853,16 @@ export const Home: React.FC = () => {
           <div className="max-w-4xl mx-auto px-4 sm:px-6">
             <div className="flex flex-col sm:flex-row items-center justify-between gap-3 text-center sm:text-left">
               <div>
-                <div className="text-xs font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
+                <div className="text-xs font-extrabold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">
                   SmartProcure
                 </div>
-                <div className="text-sm font-semibold text-slate-800 dark:text-slate-200">
+                <div className="text-sm font-bold text-slate-900 dark:text-slate-100">
                   {t('landing.sihPrototype', 'Smart India Hackathon Prototype')}
                 </div>
               </div>
 
               <div className="flex items-center gap-2 text-xs">
-                <span className="text-slate-400">{t('landing.teamLabel', 'Team')}:</span>
+                <span className="text-slate-600 dark:text-slate-400 font-semibold">{t('landing.teamLabel', 'Team')}:</span>
                 <span className="px-2.5 py-1 rounded-md font-bold tracking-wider bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-emerald-700 dark:text-emerald-400">
                   {t('landing.teamName', 'INNOVEX')}
                 </span>

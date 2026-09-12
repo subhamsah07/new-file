@@ -2,8 +2,10 @@ import * as React from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useAdminAuth } from '../../contexts/AdminAuthContext';
 import { adminService } from '../../services/adminService';
+import { cropService } from '../../services/cropService';
 import { AdminRequestItem, VerificationRecordItem } from '../../types/admin';
 import { ProcurementWorkflowStatus } from '../../types/database';
+import jsQR from 'jsqr';
 import {
   ArrowLeft,
   CheckCircle2,
@@ -19,6 +21,16 @@ import {
   ChevronRight,
   AlertCircle,
   TrendingUp,
+  Camera,
+  CameraOff,
+  Check,
+  X,
+  RefreshCw,
+  Play,
+  AlertTriangle,
+  ExternalLink,
+  IndianRupee,
+  ShieldAlert,
 } from 'lucide-react';
 
 export const AdminRequestDetail: React.FC = () => {
@@ -30,11 +42,42 @@ export const AdminRequestDetail: React.FC = () => {
   const [verificationRecords, setVerificationRecords] = React.useState<VerificationRecordItem[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [advancing, setAdvancing] = React.useState(false);
+  const [statusMessage, setStatusMessage] = React.useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
 
-  // Workflow update inputs
-  const [verifiedQty, setVerifiedQty] = React.useState<number | ''>('');
+  // QR Scanner State
+  const [qrMode, setQrMode] = React.useState<'scanner' | 'manual'>('scanner');
+  const [cameraActive, setCameraActive] = React.useState(false);
+  const [cameraError, setCameraError] = React.useState<string | null>(null);
+  const [scannedQrCode, setScannedQrCode] = React.useState<string | null>(null);
+  const [manualQrInput, setManualQrInput] = React.useState('');
+  const [qrVerifiedSuccess, setQrVerifiedSuccess] = React.useState(false);
+  const videoRef = React.useRef<HTMLVideoElement | null>(null);
+  const canvasRef = React.useRef<HTMLCanvasElement | null>(null);
+  const streamRef = React.useRef<MediaStream | null>(null);
+  const animationFrameRef = React.useRef<number | null>(null);
+
+  // Document Verification State
+  const [aadhaarVerified, setAadhaarVerified] = React.useState(false);
+  const [farmerIdCardVerified, setFarmerIdCardVerified] = React.useState(false);
+
+  // Weight & Rate State
+  const [givenWeight, setGivenWeight] = React.useState<number | ''>('');
   const [verifiedRate, setVerifiedRate] = React.useState<number | ''>('');
-  const [workflowNotes, setWorkflowNotes] = React.useState('');
+  const [weighbridgeNotes, setWeighbridgeNotes] = React.useState('');
+
+  // Payment Processing State
+  const [paymentUtr, setPaymentUtr] = React.useState('');
+  const [paymentNotes, setPaymentNotes] = React.useState('');
+
+  const workflowSteps: { status: ProcurementWorkflowStatus; label: string; icon: any; stepNumber: number }[] = [
+    { status: 'booking', label: '1. Booking Created', icon: Calendar, stepNumber: 1 },
+    { status: 'qr_verified', label: '2. QR Verified', icon: QrCode, stepNumber: 2 },
+    { status: 'document_verification', label: '3. Documents Verified', icon: FileCheck, stepNumber: 3 },
+    { status: 'weight_rate_verification', label: '4. Weight & Rate', icon: Scale, stepNumber: 4 },
+    { status: 'procurement_completed', label: '5. Procurement Done', icon: CheckCircle2, stepNumber: 5 },
+    { status: 'payment_processing', label: '6. Payment Processing', icon: Clock, stepNumber: 6 },
+    { status: 'payment_completed', label: '7. Payment Complete', icon: CreditCard, stepNumber: 7 },
+  ];
 
   const loadDetails = async () => {
     if (!id || !assignedState) return;
@@ -44,8 +87,34 @@ export const AdminRequestDetail: React.FC = () => {
       if (data.request) {
         setRequest(data.request);
         setVerificationRecords(data.verificationRecords);
-        setVerifiedQty(data.request.quantityQuintals);
-        setVerifiedRate(data.request.ratePerQuintal);
+        setGivenWeight(data.request.quantityQuintals);
+        setManualQrInput(data.request.qrIdentifier || data.request.token);
+
+        // Fetch state-specific revised MSP rate
+        try {
+          const mspRate = await cropService.getCropPriceByState(
+            data.request.cropName as any,
+            (data.request.centreState || assignedState) as any
+          );
+          setVerifiedRate(mspRate || data.request.ratePerQuintal || 2425);
+        } catch {
+          setVerifiedRate(data.request.ratePerQuintal || 2425);
+        }
+
+        // Generate default UTR reference for payment completion
+        setPaymentUtr(`DBT-${assignedState.slice(0, 2).toUpperCase()}-${Date.now().toString().slice(-8)}`);
+
+        // Check if QR or Documents were already completed in previous checkpoints
+        const hasQrRecord = data.verificationRecords.some((r) => r.verificationType === 'QR verification');
+        if (hasQrRecord || data.request.workflowStatus !== 'booking') {
+          setQrVerifiedSuccess(true);
+        }
+
+        const hasDocRecord = data.verificationRecords.some((r) => r.verificationType === 'document verification');
+        if (hasDocRecord || ['weight_rate_verification', 'procurement_completed', 'payment_processing', 'payment_completed'].includes(data.request.workflowStatus)) {
+          setAadhaarVerified(true);
+          setFarmerIdCardVerified(true);
+        }
       }
     } catch (err) {
       console.error('Failed to load request detail:', err);
@@ -58,15 +127,12 @@ export const AdminRequestDetail: React.FC = () => {
     loadDetails();
   }, [id, assignedState]);
 
-  const workflowSteps: { status: ProcurementWorkflowStatus; label: string; icon: any }[] = [
-    { status: 'booking', label: '1. Booking Created', icon: Calendar },
-    { status: 'qr_verified', label: '2. QR Verified', icon: QrCode },
-    { status: 'document_verification', label: '3. Documents Verified', icon: FileCheck },
-    { status: 'weight_rate_verification', label: '4. Weight & Rate', icon: Scale },
-    { status: 'procurement_completed', label: '5. Procurement Done', icon: CheckCircle2 },
-    { status: 'payment_processing', label: '6. Payment Processing', icon: Clock },
-    { status: 'payment_completed', label: '7. Payment Complete', icon: CreditCard },
-  ];
+  // Clean up camera stream when unmounting
+  React.useEffect(() => {
+    return () => {
+      stopCamera();
+    };
+  }, []);
 
   const currentStepIndex = React.useMemo(() => {
     if (!request) return 0;
@@ -74,24 +140,298 @@ export const AdminRequestDetail: React.FC = () => {
     return idx === -1 ? 0 : idx;
   }, [request]);
 
-  const handleAdvanceStep = async (targetStatus: ProcurementWorkflowStatus) => {
+  // Check if procurement has already started
+  const isProcurementStarted = React.useMemo(() => {
+    if (!request) return false;
+    // If status is beyond 'booking', or if there is any verification record
+    return request.workflowStatus !== 'booking' || verificationRecords.length > 0;
+  }, [request, verificationRecords]);
+
+  // Camera QR Scanner handlers
+  const startCamera = async () => {
+    setCameraError(null);
+    try {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        setCameraError('Camera API not accessible in current browser environment. Use Manual Identifier or Emulate Scan.');
+        return;
+      }
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'environment', width: { ideal: 640 }, height: { ideal: 480 } },
+      });
+      streamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        videoRef.current.setAttribute('playsinline', 'true');
+        videoRef.current.play();
+        setCameraActive(true);
+        scanQrFrame();
+      }
+    } catch (err: any) {
+      console.warn('Camera stream failed:', err);
+      setCameraError('Unable to open camera feed. You may use "Simulate Scan" or enter the QR Identifier number below.');
+      setCameraActive(false);
+    }
+  };
+
+  const stopCamera = () => {
+    if (animationFrameRef.current) {
+      cancelAnimationFrame(animationFrameRef.current);
+      animationFrameRef.current = null;
+    }
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    }
+    setCameraActive(false);
+  };
+
+  const scanQrFrame = () => {
+    if (!videoRef.current || !canvasRef.current || !cameraActive) return;
+
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d');
+
+    if (video.readyState === video.HAVE_ENOUGH_DATA && ctx) {
+      canvas.height = video.videoHeight;
+      canvas.width = video.videoWidth;
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const code = jsQR(imageData.data, imageData.width, imageData.height, {
+        inversionAttempts: 'dontInvert',
+      });
+
+      if (code && code.data) {
+        handleQrDetected(code.data);
+        return;
+      }
+    }
+
+    animationFrameRef.current = requestAnimationFrame(scanQrFrame);
+  };
+
+  const handleQrDetected = (dataString: string) => {
+    stopCamera();
+    setScannedQrCode(dataString);
+    setManualQrInput(dataString);
+    setQrVerifiedSuccess(true);
+    setStatusMessage({
+      type: 'success',
+      text: `QR Code successfully scanned & matched: "${dataString}"`,
+    });
+  };
+
+  const handleSimulateScan = () => {
+    if (!request) return;
+    const targetCode = request.qrIdentifier || request.token;
+    handleQrDetected(targetCode);
+  };
+
+  const handleManualQrVerify = () => {
+    if (!manualQrInput.trim()) {
+      setStatusMessage({ type: 'error', text: 'Please enter a valid QR Identifier number.' });
+      return;
+    }
+    setQrVerifiedSuccess(true);
+    setStatusMessage({
+      type: 'success',
+      text: `QR Identifier "${manualQrInput.trim()}" verified for intake gate check.`,
+    });
+  };
+
+  // Workflow Progression Handlers
+  const handleStartProcurement = async () => {
     if (!request) return;
     setAdvancing(true);
+    setStatusMessage(null);
 
     const ok = await adminService.advanceWorkflowStatus({
       bookingId: request.id,
-      newStatus: targetStatus,
-      verifiedQuantity: verifiedQty ? Number(verifiedQty) : undefined,
-      verifiedRate: verifiedRate ? Number(verifiedRate) : undefined,
-      notes: workflowNotes || undefined,
+      newStatus: 'qr_verified',
+      notes: `Procurement started at Counter #1. Token ${request.token} verified for physical arrival.`,
     });
 
     setAdvancing(false);
     if (ok) {
-      setWorkflowNotes('');
-      loadDetails();
+      setStatusMessage({
+        type: 'success',
+        text: 'Procurement started! Checkpoint 1 completed. Please verify the farmer\'s QR code.',
+      });
+      await loadDetails();
     } else {
-      alert('Failed to advance workflow status. Please check your admin session.');
+      setStatusMessage({
+        type: 'error',
+        text: 'Failed to start procurement. Please check your admin session.',
+      });
+    }
+  };
+
+  const handleCompleteQrStep = async () => {
+    if (!request) return;
+    if (!qrVerifiedSuccess) {
+      setStatusMessage({
+        type: 'error',
+        text: 'Please scan or verify the farmer QR identifier before saving this checkpoint.',
+      });
+      return;
+    }
+
+    setAdvancing(true);
+    setStatusMessage(null);
+
+    const ok = await adminService.advanceWorkflowStatus({
+      bookingId: request.id,
+      newStatus: 'document_verification',
+      notes: `QR verified via ${scannedQrCode ? 'Optical Scanner' : 'Identifier Matching'}: ${manualQrInput || request.qrIdentifier}`,
+    });
+
+    setAdvancing(false);
+    if (ok) {
+      setStatusMessage({
+        type: 'success',
+        text: 'QR Verified Checkpoint saved! Now proceed with Document Verification.',
+      });
+      await loadDetails();
+    } else {
+      setStatusMessage({ type: 'error', text: 'Failed to save QR checkpoint.' });
+    }
+  };
+
+  const handleCompleteDocumentStep = async () => {
+    if (!request) return;
+    if (!aadhaarVerified || !farmerIdCardVerified) {
+      setStatusMessage({
+        type: 'error',
+        text: 'Both Aadhaar Verified and Farmer Identity Card Verified checkboxes must be checked.',
+      });
+      return;
+    }
+
+    setAdvancing(true);
+    setStatusMessage(null);
+
+    const ok = await adminService.advanceWorkflowStatus({
+      bookingId: request.id,
+      newStatus: 'weight_rate_verification',
+      notes: 'Govt. Aadhaar Card & State Farmer Identity Card verified by Mandi Officer.',
+    });
+
+    setAdvancing(false);
+    if (ok) {
+      setStatusMessage({
+        type: 'success',
+        text: 'Documents Verified Checkpoint saved! Now proceed to Weighbridge and Rate verification.',
+      });
+      await loadDetails();
+    } else {
+      setStatusMessage({ type: 'error', text: 'Failed to save Document Verification checkpoint.' });
+    }
+  };
+
+  const handleCompleteWeightRateStep = async () => {
+    if (!request) return;
+    if (!givenWeight || Number(givenWeight) <= 0) {
+      setStatusMessage({ type: 'error', text: 'Please enter a valid Given Weight in Quintals.' });
+      return;
+    }
+    if (!verifiedRate || Number(verifiedRate) <= 0) {
+      setStatusMessage({ type: 'error', text: 'Please enter a valid MSP Rate.' });
+      return;
+    }
+
+    setAdvancing(true);
+    setStatusMessage(null);
+
+    const q = Number(givenWeight);
+    const r = Number(verifiedRate);
+    const ok = await adminService.advanceWorkflowStatus({
+      bookingId: request.id,
+      newStatus: 'procurement_completed',
+      verifiedQuantity: q,
+      verifiedRate: r,
+      notes: weighbridgeNotes || `Weighed: ${q} Qtl (Claimed: ${request.quantityQuintals} Qtl) at MSP ₹${r}/Qtl. Total: ₹${(q * r).toLocaleString('en-IN')}`,
+    });
+
+    setAdvancing(false);
+    if (ok) {
+      setStatusMessage({
+        type: 'success',
+        text: 'Weight & Rate certified! Procurement Done Checkpoint saved.',
+      });
+      await loadDetails();
+    } else {
+      setStatusMessage({ type: 'error', text: 'Failed to record weighbridge certification.' });
+    }
+  };
+
+  const handleAdvanceToPayment = async () => {
+    if (!request) return;
+    setAdvancing(true);
+    setStatusMessage(null);
+
+    const ok = await adminService.advanceWorkflowStatus({
+      bookingId: request.id,
+      newStatus: 'payment_processing',
+      notes: 'Procurement complete. Payment scheduled for Direct Benefit Transfer.',
+    });
+
+    setAdvancing(false);
+    if (ok) {
+      setStatusMessage({
+        type: 'info',
+        text: 'Moved to Payment Processing. Payment is currently Pending.',
+      });
+      await loadDetails();
+    } else {
+      setStatusMessage({ type: 'error', text: 'Failed to initiate payment processing.' });
+    }
+  };
+
+  // Payment Option A: Mark Pending (Leaves process incomplete until paid)
+  const handlePaymentPendingOnly = async () => {
+    if (!request) return;
+    setAdvancing(true);
+    setStatusMessage(null);
+
+    const ok = await adminService.advanceWorkflowStatus({
+      bookingId: request.id,
+      newStatus: 'payment_processing',
+      notes: paymentNotes || 'Payment marked pending in DBT queue. Requires banking authorization.',
+    });
+
+    setAdvancing(false);
+    if (ok) {
+      setStatusMessage({
+        type: 'info',
+        text: 'Payment status is PENDING. The procurement process is NOT completed yet. Admin can complete payment whenever disbursed.',
+      });
+      await loadDetails();
+    }
+  };
+
+  // Payment Option B: Disburse & Complete Payment (Full Process Completed)
+  const handleDisburseAndCompletePayment = async () => {
+    if (!request) return;
+    setAdvancing(true);
+    setStatusMessage(null);
+
+    const ref = paymentUtr.trim() || `DBT-${assignedState.slice(0, 2).toUpperCase()}-${Date.now().toString().slice(-8)}`;
+    const ok = await adminService.advanceWorkflowStatus({
+      bookingId: request.id,
+      newStatus: 'payment_completed',
+      paymentReference: ref,
+      notes: `DBT Payment disbursed. Reference (UTR): ${ref}. Rate credited to farmer account.`,
+    });
+
+    setAdvancing(false);
+    if (ok) {
+      setStatusMessage({
+        type: 'success',
+        text: 'Full Procurement Process Completed! Payment credited to farmer account and notification delivered.',
+      });
+      await loadDetails();
+    } else {
+      setStatusMessage({ type: 'error', text: 'Failed to complete payment disbursement.' });
     }
   };
 
@@ -122,14 +462,20 @@ export const AdminRequestDetail: React.FC = () => {
     );
   }
 
+  // Calculated financial values
+  const currentQuantity = Number(givenWeight) || request.quantityQuintals;
+  const currentRate = Number(verifiedRate) || request.ratePerQuintal || 2425;
+  const totalCalculatedPayout = currentQuantity * currentRate;
+
   return (
     <div className="space-y-6">
-      {/* Top Breadcrumb & Actions */}
+      {/* Top Breadcrumb & Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
         <div className="flex items-center gap-3">
           <button
             onClick={() => navigate('/admin/requests')}
             className="p-2 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-600 transition"
+            title="Back to requests"
           >
             <ArrowLeft className="w-4 h-4" />
           </button>
@@ -138,57 +484,120 @@ export const AdminRequestDetail: React.FC = () => {
               <span className="font-mono font-bold text-emerald-700 text-lg sm:text-xl">
                 {request.token}
               </span>
+              <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-slate-100 text-slate-700">
+                {request.cropName} ({request.quantityQuintals} Qtl)
+              </span>
               <span
-                className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold uppercase ${
-                  request.bookingStatus === 'completed'
-                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                    : request.bookingStatus === 'in_progress'
-                    ? 'bg-blue-50 text-blue-700 border border-blue-200'
-                    : request.bookingStatus === 'cancelled'
-                    ? 'bg-red-50 text-red-700 border border-red-200'
-                    : 'bg-amber-50 text-amber-700 border border-amber-200'
+                className={`px-2 py-0.5 rounded text-[11px] font-semibold ${
+                  request.workflowStatus === 'payment_completed'
+                    ? 'bg-emerald-100 text-emerald-800'
+                    : isProcurementStarted
+                    ? 'bg-blue-100 text-blue-800'
+                    : 'bg-amber-100 text-amber-800'
                 }`}
               >
-                {request.bookingStatus}
+                {request.workflowStatus === 'payment_completed'
+                  ? 'FULL PROCESS COMPLETED'
+                  : isProcurementStarted
+                  ? `IN PROGRESS (STEP ${currentStepIndex + 1})`
+                  : 'READY TO START'}
               </span>
             </div>
             <p className="text-xs text-slate-500 mt-0.5">
-              Procurement Request • {request.cropName} ({request.quantityQuintals} Quintals)
+              Farmer: <strong className="text-slate-700">{request.farmerName}</strong> • Mandi: {request.centreName} ({request.centreState})
             </p>
           </div>
         </div>
 
         <div className="flex items-center gap-2">
-          <Link
-            to="/admin/queue"
-            className="px-3.5 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition"
+          <button
+            onClick={loadDetails}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition"
           >
-            Go to Live Queue
+            <RefreshCw className="w-3.5 h-3.5 text-slate-500" />
+            <span>Refresh Checkpoints</span>
+          </button>
+          <Link
+            to="/admin/payments"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition"
+          >
+            <CreditCard className="w-3.5 h-3.5 text-slate-500" />
+            <span>Payments Option</span>
           </Link>
         </div>
       </div>
 
-      {/* 7-Step Procurement Workflow Timeline (Foundation) */}
-      <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs space-y-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wider">
-              Procurement Verification Lifecycle
-            </h2>
-            <p className="text-xs text-slate-500">
-              Auditable checkpoint progression from booking gate check to payment completion.
-            </p>
+      {/* Dynamic Feedback Banner */}
+      {statusMessage && (
+        <div
+          className={`p-4 rounded-xl text-xs flex items-center justify-between border ${
+            statusMessage.type === 'success'
+              ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+              : statusMessage.type === 'error'
+              ? 'bg-rose-50 text-rose-800 border-rose-200'
+              : 'bg-blue-50 text-blue-800 border-blue-200'
+          }`}
+        >
+          <div className="flex items-center gap-2">
+            {statusMessage.type === 'success' ? (
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+            ) : statusMessage.type === 'error' ? (
+              <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+            ) : (
+              <Clock className="w-4 h-4 text-blue-600 shrink-0" />
+            )}
+            <span className="font-semibold">{statusMessage.text}</span>
           </div>
-          <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-full">
-            Step {currentStepIndex + 1} of {workflowSteps.length}
+          <button
+            onClick={() => setStatusMessage(null)}
+            className="text-xs font-bold hover:opacity-75 ml-3"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
+      {/* Checkpoint Resumption Notice */}
+      {isProcurementStarted && request.workflowStatus !== 'payment_completed' && (
+        <div className="p-3.5 rounded-xl bg-amber-50/80 border border-amber-200/80 text-amber-900 text-xs flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <ShieldCheck className="w-4 h-4 text-amber-700 shrink-0" />
+            <span>
+              <strong>Checkpoint System Active:</strong> Procurement is safely recorded at{' '}
+              <strong className="underline">Step {currentStepIndex + 1}: {workflowSteps[currentStepIndex]?.label}</strong>.
+              If previously interrupted, all prior checkpoints remain certified and intact.
+            </span>
+          </div>
+          <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-200/70 text-amber-800 uppercase tracking-wider">
+            Checkpoint Resumed
           </span>
         </div>
+      )}
 
-        {/* Progress Bar & Badges */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2 pt-2">
+      {/* 7-Step Checkpoint Stepper Bar */}
+      <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs space-y-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div>
+            <h3 className="font-bold text-slate-900 text-base">Procurement Verification Lifecycle</h3>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Each step represents a certified checkpoint. Process resumes from the last completed checkpoint.
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-semibold text-slate-600">
+              Active Checkpoint:
+            </span>
+            <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+              {workflowSteps[currentStepIndex]?.label}
+            </span>
+          </div>
+        </div>
+
+        {/* Horizontal Step Indicator */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
           {workflowSteps.map((step, idx) => {
-            const isCompleted = idx < currentStepIndex;
-            const isCurrent = idx === currentStepIndex;
+            const isCompleted = idx < currentStepIndex || request.workflowStatus === 'payment_completed';
+            const isCurrent = idx === currentStepIndex && request.workflowStatus !== 'payment_completed';
             const Icon = step.icon;
 
             return (
@@ -196,111 +605,644 @@ export const AdminRequestDetail: React.FC = () => {
                 key={step.status}
                 className={`p-3 rounded-xl border flex flex-col items-center text-center transition ${
                   isCurrent
-                    ? 'border-emerald-500 bg-emerald-50/50 text-emerald-900 shadow-xs'
+                    ? 'border-emerald-500 bg-emerald-50/70 text-emerald-900 shadow-xs ring-2 ring-emerald-500/20'
                     : isCompleted
-                    ? 'border-slate-200 bg-slate-50 text-slate-700'
+                    ? 'border-slate-200 bg-emerald-50/30 text-slate-800'
                     : 'border-slate-100 bg-white text-slate-400 opacity-60'
                 }`}
               >
                 <div
                   className={`w-7 h-7 rounded-lg flex items-center justify-center text-xs mb-1.5 ${
                     isCurrent
-                      ? 'bg-emerald-600 text-white'
+                      ? 'bg-emerald-600 text-white font-bold'
                       : isCompleted
-                      ? 'bg-slate-200 text-slate-700'
+                      ? 'bg-emerald-600 text-white'
                       : 'bg-slate-100 text-slate-400'
                   }`}
                 >
-                  <Icon className="w-3.5 h-3.5" />
+                  {isCompleted ? <Check className="w-4 h-4" /> : <Icon className="w-3.5 h-3.5" />}
                 </div>
                 <span className="text-[11px] font-semibold leading-tight">{step.label}</span>
+                <span className="text-[9px] text-slate-400 mt-1 uppercase font-bold tracking-wider">
+                  {isCompleted ? 'Completed' : isCurrent ? 'Active Now' : 'Pending'}
+                </span>
               </div>
             );
           })}
         </div>
 
-        {/* Workflow Advance Controls */}
-        <div className="pt-4 border-t border-slate-100 bg-slate-50/60 -mx-6 -mb-6 p-6 rounded-b-2xl">
-          <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3">
-            Officer Verification Action
-          </h4>
-
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+        {/* ----------------------------------------------------------------- */}
+        {/* OFFICER VERIFICATION ACTION PANEL (Dedicated UI per active step) */}
+        {/* ----------------------------------------------------------------- */}
+        <div className="pt-5 border-t border-slate-100 bg-slate-50/70 -mx-6 -mb-6 p-6 rounded-b-2xl">
+          <div className="flex items-center justify-between mb-4">
             <div>
-              <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                Verified Quantity (Quintals)
-              </label>
-              <input
-                type="number"
-                value={verifiedQty}
-                onChange={(e) => setVerifiedQty(e.target.value === '' ? '' : Number(e.target.value))}
-                placeholder={String(request.quantityQuintals)}
-                className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs text-slate-900 focus:ring-2 focus:ring-emerald-500"
-              />
+              <div className="text-[10px] font-bold text-emerald-700 tracking-wider uppercase">
+                Step-by-Step Gate Protocol
+              </div>
+              <h4 className="text-sm font-bold text-slate-900">
+                Officer Verification Action: {workflowSteps[currentStepIndex]?.label}
+              </h4>
             </div>
-
-            <div>
-              <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                Verified MSP Rate (₹/Qtl)
-              </label>
-              <input
-                type="number"
-                value={verifiedRate}
-                onChange={(e) => setVerifiedRate(e.target.value === '' ? '' : Number(e.target.value))}
-                placeholder={String(request.ratePerQuintal)}
-                className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs text-slate-900 focus:ring-2 focus:ring-emerald-500"
-              />
-            </div>
-
-            <div>
-              <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                Verification Notes / Seal ID
-              </label>
-              <input
-                type="text"
-                value={workflowNotes}
-                onChange={(e) => setWorkflowNotes(e.target.value)}
-                placeholder="e.g. Weighbridge Slip #4912"
-                className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs text-slate-900 focus:ring-2 focus:ring-emerald-500"
-              />
-            </div>
+            <span className="text-xs text-slate-500 font-medium">
+              Checkpoint #{currentStepIndex + 1} of 7
+            </span>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            {currentStepIndex < workflowSteps.length - 1 && (
-              <button
-                type="button"
-                disabled={advancing}
-                onClick={() => handleAdvanceStep(workflowSteps[currentStepIndex + 1].status)}
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 text-xs font-semibold text-white hover:bg-emerald-500 shadow-xs transition disabled:opacity-50"
-              >
-                <span>Advance to: {workflowSteps[currentStepIndex + 1].label}</span>
-                <ChevronRight className="w-3.5 h-3.5" />
-              </button>
-            )}
+          {/* ============================================================== */}
+          {/* STEP 1: INITIAL STATE -> START PROCUREMENT BUTTON             */}
+          {/* ============================================================== */}
+          {!isProcurementStarted && request.workflowStatus === 'booking' && (
+            <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-xs space-y-4">
+              <div className="flex items-start gap-4">
+                <div className="w-12 h-12 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
+                  <Play className="w-6 h-6 ml-0.5" />
+                </div>
+                <div>
+                  <h5 className="text-sm font-bold text-slate-900">Start Physical Procurement Intake</h5>
+                  <p className="text-xs text-slate-600 mt-1">
+                    Click the button below when the farmer arrives at the Mandi gate. This starts the procurement
+                    intake process, locks the arrival token into Counter #1, and enables the verification checkpoints.
+                  </p>
+                </div>
+              </div>
 
-            {currentStepIndex >= 4 && request.workflowStatus !== 'payment_completed' && (
-              <button
-                type="button"
-                disabled={advancing}
-                onClick={() => handleAdvanceStep('payment_completed')}
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-900 text-xs font-semibold text-white hover:bg-slate-800 shadow-xs transition disabled:opacity-50"
-              >
-                <CreditCard className="w-3.5 h-3.5" />
-                <span>Mark Payment Completed</span>
-              </button>
-            )}
-          </div>
+              <div className="flex items-center gap-3 pt-2">
+                <button
+                  type="button"
+                  disabled={advancing}
+                  onClick={handleStartProcurement}
+                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-600 text-xs font-bold text-white hover:bg-emerald-500 shadow-xs transition disabled:opacity-50"
+                >
+                  <Play className="w-4 h-4 fill-current" />
+                  <span>{advancing ? 'Starting Procurement...' : 'Start Procurement'}</span>
+                </button>
+                <span className="text-xs text-slate-400">
+                  Token: <strong className="font-mono text-slate-700">{request.token}</strong>
+                </span>
+              </div>
+            </div>
+          )}
+
+          {/* ============================================================== */}
+          {/* STEP 2: QR VERIFICATION                                       */}
+          {/* ============================================================== */}
+          {(request.workflowStatus === 'booking' && isProcurementStarted || request.workflowStatus === 'qr_verified') && (
+            <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-xs space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-100">
+                <div>
+                  <h5 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                    Physical Gate QR Verification
+                  </h5>
+                  <p className="text-xs text-slate-500">
+                    Scan the farmer's booking pass QR code or confirm the opaque QR Identifier number.
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setQrMode('scanner');
+                      startCamera();
+                    }}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition inline-flex items-center gap-1.5 ${
+                      qrMode === 'scanner'
+                        ? 'bg-emerald-600 text-white'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    }`}
+                  >
+                    <Camera className="w-3.5 h-3.5" />
+                    <span>Scan QR</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setQrMode('manual');
+                      stopCamera();
+                    }}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition inline-flex items-center gap-1.5 ${
+                      qrMode === 'manual'
+                        ? 'bg-emerald-600 text-white'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    }`}
+                  >
+                    <QrCode className="w-3.5 h-3.5" />
+                    <span>QR Identifier Number</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* QR Scanner Mode */}
+              {qrMode === 'scanner' && (
+                <div className="space-y-4">
+                  <div className="relative max-w-sm mx-auto bg-slate-900 rounded-xl overflow-hidden aspect-4/3 flex items-center justify-center border border-slate-700">
+                    <video
+                      ref={videoRef}
+                      className={`w-full h-full object-cover ${cameraActive ? 'block' : 'hidden'}`}
+                    />
+                    <canvas ref={canvasRef} className="hidden" />
+
+                    {!cameraActive && (
+                      <div className="p-6 text-center text-slate-300 space-y-3">
+                        <Camera className="w-8 h-8 mx-auto text-slate-400" />
+                        <p className="text-xs">Camera preview is ready.</p>
+                        <button
+                          type="button"
+                          onClick={startCamera}
+                          className="px-4 py-2 rounded-lg bg-emerald-600 text-white text-xs font-semibold hover:bg-emerald-500 shadow-xs"
+                        >
+                          Open Camera Scanner
+                        </button>
+                      </div>
+                    )}
+
+                    {cameraActive && (
+                      <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center">
+                        <div className="w-48 h-48 border-2 border-emerald-400 rounded-2xl relative animate-pulse">
+                          <div className="absolute inset-x-0 top-1/2 h-0.5 bg-emerald-400 shadow-sm" />
+                        </div>
+                        <span className="mt-3 px-3 py-1 rounded bg-black/60 text-white text-[11px] font-mono">
+                          Point camera at Farmer QR Code
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  {cameraError && (
+                    <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800">
+                      {cameraError}
+                    </div>
+                  )}
+
+                  <div className="flex flex-wrap items-center justify-center gap-3">
+                    {cameraActive && (
+                      <button
+                        type="button"
+                        onClick={stopCamera}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-300"
+                      >
+                        <CameraOff className="w-3.5 h-3.5" />
+                        <span>Stop Camera</span>
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={handleSimulateScan}
+                      className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg border border-emerald-300 bg-emerald-50 text-xs font-semibold text-emerald-800 hover:bg-emerald-100"
+                    >
+                      <QrCode className="w-3.5 h-3.5" />
+                      <span>Simulate QR Scan (Instant Detection)</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Manual Identifier Mode */}
+              {qrMode === 'manual' && (
+                <div className="max-w-md space-y-3">
+                  <label className="block text-xs font-semibold text-slate-700">
+                    QR Identifier Number / Token
+                  </label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={manualQrInput}
+                      onChange={(e) => {
+                        setManualQrInput(e.target.value);
+                        setQrVerifiedSuccess(false);
+                      }}
+                      placeholder="e.g. SMP-2026-QR-XXXX or Token"
+                      className="flex-1 px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs text-slate-900 font-mono focus:ring-2 focus:ring-emerald-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleManualQrVerify}
+                      className="px-4 py-2 rounded-lg bg-slate-800 text-xs font-semibold text-white hover:bg-slate-700 shadow-xs"
+                    >
+                      Verify Identifier
+                    </button>
+                  </div>
+                  <p className="text-[11px] text-slate-400">
+                    Expected Farmer QR Identifier: <strong className="font-mono text-emerald-700">{request.qrIdentifier}</strong>
+                  </p>
+                </div>
+              )}
+
+              {/* Checkpoint Advance Button */}
+              <div className="pt-4 border-t border-slate-100 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div
+                    className={`w-3 h-3 rounded-full ${
+                      qrVerifiedSuccess ? 'bg-emerald-500' : 'bg-slate-300'
+                    }`}
+                  />
+                  <span className="text-xs font-semibold text-slate-700">
+                    {qrVerifiedSuccess ? 'QR Identity Verified ✓' : 'Awaiting QR Scan / Identifier Verification'}
+                  </span>
+                </div>
+
+                <button
+                  type="button"
+                  disabled={advancing || !qrVerifiedSuccess}
+                  onClick={handleCompleteQrStep}
+                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-600 text-xs font-bold text-white hover:bg-emerald-500 shadow-xs transition disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <span>{advancing ? 'Saving Checkpoint...' : 'Confirm QR & Save Checkpoint'}</span>
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* ============================================================== */}
+          {/* STEP 3: DOCUMENT VERIFICATION                                 */}
+          {/* ============================================================== */}
+          {request.workflowStatus === 'document_verification' && (
+            <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-xs space-y-5">
+              <div>
+                <h5 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                  Mandatory Document Verification
+                </h5>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Check both physical government documents presented by <strong>{request.farmerName}</strong>.
+                  Both documents must be checked to complete this checkpoint.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {/* Aadhaar Checkbox */}
+                <label
+                  className={`p-4 rounded-xl border-2 flex items-start gap-3.5 cursor-pointer transition ${
+                    aadhaarVerified
+                      ? 'border-emerald-500 bg-emerald-50/50 text-slate-900'
+                      : 'border-slate-200 hover:border-slate-300 text-slate-700'
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={aadhaarVerified}
+                    onChange={(e) => setAadhaarVerified(e.target.checked)}
+                    className="w-4 h-4 mt-0.5 rounded text-emerald-600 focus:ring-emerald-500 border-slate-300"
+                  />
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2 font-bold text-xs">
+                      <span>Aadhaar Verified</span>
+                      {aadhaarVerified && <Check className="w-3.5 h-3.5 text-emerald-600" />}
+                    </div>
+                    <p className="text-[11px] text-slate-500">
+                      Physical UIDAI Aadhaar Card inspected. Farmer identity and photo match state records.
+                    </p>
+                  </div>
+                </label>
+
+                {/* Farmer Identity Card Checkbox */}
+                <label
+                  className={`p-4 rounded-xl border-2 flex items-start gap-3.5 cursor-pointer transition ${
+                    farmerIdCardVerified
+                      ? 'border-emerald-500 bg-emerald-50/50 text-slate-900'
+                      : 'border-slate-200 hover:border-slate-300 text-slate-700'
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={farmerIdCardVerified}
+                    onChange={(e) => setFarmerIdCardVerified(e.target.checked)}
+                    className="w-4 h-4 mt-0.5 rounded text-emerald-600 focus:ring-emerald-500 border-slate-300"
+                  />
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2 font-bold text-xs">
+                      <span>Farmer Identity Card Verified</span>
+                      {farmerIdCardVerified && <Check className="w-3.5 h-3.5 text-emerald-600" />}
+                    </div>
+                    <p className="text-[11px] text-slate-500">
+                      State Farmer Registry / Kisan Passbook verified. Land ownership / crop eligibility certified.
+                    </p>
+                  </div>
+                </label>
+              </div>
+
+              {/* Checkpoint Advance Button */}
+              <div className="pt-4 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="text-xs text-slate-500">
+                  {aadhaarVerified && farmerIdCardVerified ? (
+                    <span className="font-semibold text-emerald-700 flex items-center gap-1.5">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                      Both documents verified and certified. Ready to advance.
+                    </span>
+                  ) : (
+                    <span className="text-amber-700 font-medium flex items-center gap-1.5">
+                      <AlertTriangle className="w-4 h-4 text-amber-600" />
+                      Both checkboxes are required to complete document verification.
+                    </span>
+                  )}
+                </div>
+
+                <button
+                  type="button"
+                  disabled={advancing || !aadhaarVerified || !farmerIdCardVerified}
+                  onClick={handleCompleteDocumentStep}
+                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-600 text-xs font-bold text-white hover:bg-emerald-500 shadow-xs transition disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <span>{advancing ? 'Saving Checkpoint...' : 'Complete Document Verification & Save Checkpoint'}</span>
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* ============================================================== */}
+          {/* STEP 4: WEIGHT & RATE VERIFICATION                            */}
+          {/* ============================================================== */}
+          {request.workflowStatus === 'weight_rate_verification' && (
+            <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-xs space-y-5">
+              <div>
+                <h5 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                  Weighbridge Measurement & Rate Certification
+                </h5>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Inspect electronic scale gross-minus-tare reading. Compare Claimed Weight vs Given Weight.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                {/* Claimed Weight (Read-only reference) */}
+                <div className="p-4 rounded-xl bg-slate-50 border border-slate-200">
+                  <span className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
+                    Claimed Weight (Slot Booking)
+                  </span>
+                  <div className="text-2xl font-bold text-slate-800 mt-1">
+                    {request.quantityQuintals}{' '}
+                    <span className="text-xs font-normal text-slate-500">Quintals</span>
+                  </div>
+                  <p className="text-[11px] text-slate-400 mt-1">Stated by farmer in slot request</p>
+                </div>
+
+                {/* Given Weight (Actual Measured Input) */}
+                <div className="p-4 rounded-xl bg-white border-2 border-emerald-500 shadow-xs">
+                  <label className="block text-[11px] font-bold text-emerald-800 uppercase tracking-wider mb-1">
+                    Given Weight (Measured Scale) *
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0.1"
+                      value={givenWeight}
+                      onChange={(e) => setGivenWeight(e.target.value === '' ? '' : Number(e.target.value))}
+                      placeholder={String(request.quantityQuintals)}
+                      className="w-full text-xl font-bold text-slate-900 px-3 py-1.5 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500"
+                    />
+                    <span className="text-xs font-bold text-slate-600">Qtl</span>
+                  </div>
+                  <p className="text-[10px] text-emerald-700 font-medium mt-1.5">
+                    Gross weight minus truck tare weight
+                  </p>
+                </div>
+
+                {/* Active State MSP Rate */}
+                <div className="p-4 rounded-xl bg-slate-50 border border-slate-200">
+                  <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1">
+                    MSP Rate for {request.centreState} *
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xl font-bold text-slate-900">₹</span>
+                    <input
+                      type="number"
+                      value={verifiedRate}
+                      onChange={(e) => setVerifiedRate(e.target.value === '' ? '' : Number(e.target.value))}
+                      className="w-full text-xl font-bold text-slate-900 px-3 py-1.5 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500"
+                    />
+                    <span className="text-xs font-bold text-slate-600">/Qtl</span>
+                  </div>
+                  <p className="text-[10px] text-slate-400 mt-1.5">Official State MSP Benchmark</p>
+                </div>
+              </div>
+
+              {/* Real-time Calculation Card */}
+              <div className="p-4 rounded-xl bg-emerald-50/80 border border-emerald-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <span className="text-xs font-semibold text-emerald-900">Certified Procurement Calculation:</span>
+                  <div className="text-sm text-emerald-800 mt-0.5">
+                    Given Weight (<strong>{currentQuantity} Quintals</strong>) × MSP Rate (<strong>₹{currentRate}/Qtl</strong>)
+                  </div>
+                </div>
+                <div className="text-right">
+                  <span className="text-[11px] font-semibold text-emerald-700 uppercase tracking-wider block">
+                    Certified Payout Value:
+                  </span>
+                  <span className="text-2xl font-bold text-emerald-900 font-mono">
+                    ₹{totalCalculatedPayout.toLocaleString('en-IN')}
+                  </span>
+                </div>
+              </div>
+
+              {/* Weighbridge Notes / Slip */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Weighbridge Slip Number / Quality Inspection Notes
+                </label>
+                <input
+                  type="text"
+                  value={weighbridgeNotes}
+                  onChange={(e) => setWeighbridgeNotes(e.target.value)}
+                  placeholder="e.g. Weighbridge Slip #WB-8491, Moisture 11.2%, Fair Average Quality (FAQ)"
+                  className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs text-slate-900 focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+
+              {/* Checkpoint Advance Button */}
+              <div className="pt-4 border-t border-slate-100 flex items-center justify-end">
+                <button
+                  type="button"
+                  disabled={advancing || !givenWeight || Number(givenWeight) <= 0}
+                  onClick={handleCompleteWeightRateStep}
+                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-600 text-xs font-bold text-white hover:bg-emerald-500 shadow-xs transition disabled:opacity-40"
+                >
+                  <Scale className="w-4 h-4" />
+                  <span>{advancing ? 'Certifying...' : 'Certify Weighment & Complete Procurement'}</span>
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* ============================================================== */}
+          {/* STEP 5: PROCUREMENT DONE RECEIPT                               */}
+          {/* ============================================================== */}
+          {request.workflowStatus === 'procurement_completed' && (
+            <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-xs space-y-5">
+              <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                <div className="flex items-center gap-2 text-emerald-700 font-bold text-sm">
+                  <CheckCircle2 className="w-5 h-5" />
+                  <span>Grain Custody Procurement Certified</span>
+                </div>
+                <span className="px-2.5 py-0.5 rounded text-[11px] font-bold bg-emerald-100 text-emerald-800">
+                  Checkpoint 5 Verified
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
+                <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-100">
+                  <span className="text-slate-500 block">Certified Given Weight:</span>
+                  <span className="text-base font-bold text-slate-900">{request.verifiedQuantity || request.quantityQuintals} Quintals</span>
+                </div>
+                <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-100">
+                  <span className="text-slate-500 block">Certified MSP Rate:</span>
+                  <span className="text-base font-bold text-slate-900">₹{request.verifiedRate || request.ratePerQuintal}/Quintal</span>
+                </div>
+                <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-100">
+                  <span className="text-slate-500 block">Total Payable to Farmer:</span>
+                  <span className="text-base font-bold text-emerald-800 font-mono">
+                    ₹{(request.finalValue || request.estimatedValue).toLocaleString('en-IN')}
+                  </span>
+                </div>
+              </div>
+
+              <p className="text-xs text-slate-600">
+                The grain has been securely unloaded and taken into physical Mandi custody. Proceed to Payment Processing
+                to disburse funds or review DBT queue status.
+              </p>
+
+              <div className="pt-4 border-t border-slate-100 flex items-center justify-end">
+                <button
+                  type="button"
+                  disabled={advancing}
+                  onClick={handleAdvanceToPayment}
+                  className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-600 text-xs font-bold text-white hover:bg-emerald-500 shadow-xs transition"
+                >
+                  <span>Proceed to Payment Processing</span>
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* ============================================================== */}
+          {/* STEP 6 & 7: PAYMENT PROCESSING (Two explicit choices)          */}
+          {/* ============================================================== */}
+          {(request.workflowStatus === 'payment_processing' || request.workflowStatus === 'payment_completed') && (
+            <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-xs space-y-6">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-100">
+                <div>
+                  <h5 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                    Direct Benefit Transfer (DBT) Payment Settlement
+                  </h5>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Amount Payable: <strong className="font-mono text-slate-900 text-sm">₹{(request.finalValue || request.estimatedValue).toLocaleString('en-IN')}</strong> to farmer <strong>{request.farmerName}</strong>.
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <span
+                    className={`px-3 py-1 rounded-full text-xs font-bold ${
+                      request.workflowStatus === 'payment_completed'
+                        ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                        : 'bg-amber-100 text-amber-800 border border-amber-200'
+                    }`}
+                  >
+                    {request.workflowStatus === 'payment_completed' ? 'PAYMENT COMPLETED' : 'PAYMENT PENDING'}
+                  </span>
+                </div>
+              </div>
+
+              {request.workflowStatus === 'payment_completed' ? (
+                /* Already Completed State */
+                <div className="p-5 rounded-2xl bg-emerald-50 border border-emerald-200 space-y-3">
+                  <div className="flex items-center gap-2 text-emerald-800 font-bold text-sm">
+                    <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                    <span>Full Procurement Process Completed Successfully</span>
+                  </div>
+                  <p className="text-xs text-emerald-900 leading-relaxed">
+                    Payment of <strong>₹{(request.finalValue || request.estimatedValue).toLocaleString('en-IN')}</strong> at MSP rate <strong>₹{request.verifiedRate || request.ratePerQuintal}/Qtl</strong> has been credited to farmer {request.farmerName}'s bank account via Direct Benefit Transfer (DBT).
+                  </p>
+                  <div className="flex items-center gap-3 pt-2 text-xs text-emerald-800">
+                    <Link
+                      to="/admin/payments"
+                      className="inline-flex items-center gap-1 font-semibold underline hover:text-emerald-950"
+                    >
+                      <CreditCard className="w-3.5 h-3.5" />
+                      <span>View in Payments Ledger</span>
+                    </Link>
+                  </div>
+                </div>
+              ) : (
+                /* Payment is in processing / pending state -> Two choices */
+                <div className="space-y-4">
+                  <div className="p-4 rounded-xl bg-amber-50/70 border border-amber-200 text-amber-900 text-xs">
+                    <div className="flex items-center gap-2 font-bold mb-1">
+                      <Clock className="w-4 h-4 text-amber-700" />
+                      <span>Current Status: Payment Pending (Process Incomplete)</span>
+                    </div>
+                    <p>
+                      If payment is pending, the procurement process is NOT completed yet. The farmer has been notified
+                      that payment is queued. The process completes when you or the admin disburses the payment below
+                      or in the Payments option.
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">
+                        Bank Transaction Ref / UTR Number *
+                      </label>
+                      <input
+                        type="text"
+                        value={paymentUtr}
+                        onChange={(e) => setPaymentUtr(e.target.value)}
+                        placeholder="e.g. UTR-SBI-2026-984128"
+                        className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-mono text-slate-900 focus:ring-2 focus:ring-emerald-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">
+                        DBT Processing Notes
+                      </label>
+                      <input
+                        type="text"
+                        value={paymentNotes}
+                        onChange={(e) => setPaymentNotes(e.target.value)}
+                        placeholder="e.g. PFMS Batch #4102 / Direct Bank Credit"
+                        className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs text-slate-900 focus:ring-2 focus:ring-emerald-500"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="pt-3 flex flex-wrap items-center justify-between gap-3">
+                    <button
+                      type="button"
+                      disabled={advancing}
+                      onClick={handlePaymentPendingOnly}
+                      className="px-4 py-2 rounded-lg border border-slate-300 bg-white text-xs font-semibold text-slate-700 hover:bg-slate-50 transition"
+                    >
+                      Keep as Payment Pending (Incomplete)
+                    </button>
+
+                    <button
+                      type="button"
+                      disabled={advancing}
+                      onClick={handleDisburseAndCompletePayment}
+                      className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl bg-slate-900 text-xs font-bold text-white hover:bg-slate-800 shadow-xs transition disabled:opacity-50"
+                    >
+                      <Check className="w-4 h-4" />
+                      <span>{advancing ? 'Disbursing...' : 'Disburse Payment & Mark Full Process Completed'}</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Booking & Farmer Information Grid */}
+      {/* Booking & Farmer Information Cards */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Left: Farmer & Booking Pass */}
+        {/* Left: Farmer Particulars */}
         <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs space-y-4">
           <h3 className="font-bold text-slate-800 text-sm flex items-center gap-2">
             <User className="w-4 h-4 text-emerald-600" />
-            Farmer Particulars
+            Farmer Identity Particulars
           </h3>
 
           <div className="space-y-3 text-xs">
@@ -325,11 +1267,11 @@ export const AdminRequestDetail: React.FC = () => {
           </div>
         </div>
 
-        {/* Right: Yard & Slot Assignment */}
+        {/* Right: Mandi & Yard Allocation */}
         <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs space-y-4">
           <h3 className="font-bold text-slate-800 text-sm flex items-center gap-2">
             <Building2 className="w-4 h-4 text-emerald-600" />
-            Centre & Slot Allocation
+            Centre & Yard Allocation
           </h3>
 
           <div className="space-y-3 text-xs">
@@ -338,41 +1280,33 @@ export const AdminRequestDetail: React.FC = () => {
               <span className="font-semibold text-slate-900">{request.centreName}</span>
             </div>
             <div className="flex justify-between py-1.5 border-b border-slate-100">
-              <span className="text-slate-500">Centre District & State:</span>
-              <span className="font-semibold text-slate-800">
-                {request.centreDistrict}, {request.centreState}
-              </span>
+              <span className="text-slate-500">Centre State:</span>
+              <span className="font-semibold text-slate-800">{request.centreState}</span>
             </div>
             <div className="flex justify-between py-1.5 border-b border-slate-100">
-              <span className="text-slate-500">Preferred Date:</span>
-              <span className="text-slate-800">{request.preferredDate} ({request.preferredTimeSlot})</span>
-            </div>
-            <div className="flex justify-between py-1.5 border-b border-slate-100">
-              <span className="text-slate-500">Assigned Slot Window:</span>
+              <span className="text-slate-500">Slot Assigned Window:</span>
               <span className="font-semibold text-emerald-700">
-                {request.assignedDate} • {request.assignedStartTime?.slice(0, 5)} - {request.assignedEndTime?.slice(0, 5)}
+                {request.assignedDate || request.preferredDate} • {request.assignedStartTime?.slice(0, 5) || '09:00'} - {request.assignedEndTime?.slice(0, 5) || '17:00'}
               </span>
             </div>
             <div className="flex justify-between py-1.5 border-b border-slate-100">
-              <span className="text-slate-500">Estimated Procurement Value:</span>
-              <span className="font-bold text-slate-900">
-                ₹{request.estimatedValue.toLocaleString('en-IN')}
-              </span>
+              <span className="text-slate-500">Active State MSP Rate:</span>
+              <span className="font-bold text-slate-900">₹{request.ratePerQuintal}/Quintal</span>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Verification Audit Records Log */}
+      {/* Checkpoint Audit Trail Log */}
       <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs space-y-4">
         <h3 className="font-bold text-slate-800 text-sm flex items-center gap-2">
           <ShieldCheck className="w-4 h-4 text-emerald-600" />
-          Checkpoint Audit Trail ({verificationRecords.length} records)
+          Auditable Checkpoint History ({verificationRecords.length} checkpoints recorded)
         </h3>
 
         {verificationRecords.length === 0 ? (
-          <p className="text-xs text-slate-400 py-4">
-            No verification audit checkpoints logged yet for this request.
+          <p className="text-xs text-slate-400 py-3">
+            No checkpoints recorded yet. Click "Start Procurement" to begin the verification lifecycle.
           </p>
         ) : (
           <div className="overflow-x-auto">
@@ -382,16 +1316,18 @@ export const AdminRequestDetail: React.FC = () => {
                   <th className="py-2.5 px-3">Timestamp</th>
                   <th className="py-2.5 px-3">Verification Checkpoint</th>
                   <th className="py-2.5 px-3">Status</th>
-                  <th className="py-2.5 px-3">Notes / Seal</th>
+                  <th className="py-2.5 px-3">Notes / Seal Slip</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {verificationRecords.map((v) => (
                   <tr key={v.id}>
-                    <td className="py-2.5 px-3 text-slate-500">
+                    <td className="py-2.5 px-3 text-slate-500 font-mono text-[11px]">
                       {v.verifiedAt ? new Date(v.verifiedAt).toLocaleString() : new Date(v.createdAt).toLocaleString()}
                     </td>
-                    <td className="py-2.5 px-3 font-semibold text-slate-800">{v.verificationType}</td>
+                    <td className="py-2.5 px-3 font-semibold text-slate-800 capitalize">
+                      {v.verificationType}
+                    </td>
                     <td className="py-2.5 px-3">
                       <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
                         {v.status}

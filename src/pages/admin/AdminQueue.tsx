@@ -569,6 +569,17 @@ export const AdminQueue: React.FC = () => {
         return;
       }
 
+      // Sync procurement request workflow status and checkpoint
+      try {
+        await adminService.advanceWorkflowStatus({
+          bookingId: item.bookingId,
+          newStatus: 'qr_verified',
+          notes: `Procurement processing started at Counter #1 from live Queue.`,
+        });
+      } catch (workflowErr) {
+        console.warn('Could not advance workflow status from queue:', workflowErr);
+      }
+
       setSuccessBanner(`Token ${item.token} (${item.farmerName}) is now actively processing on Counter #1.`);
       await loadQueueData();
     } catch (err: any) {

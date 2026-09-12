@@ -81,6 +81,23 @@ const STATE_MSP_BENCHMARKS: Record<IndianState, Record<CropName, number>> = {
 };
 
 class CropService {
+  private priceCache: Map<string, number> = new Map();
+
+  /**
+   * Notifies local runtime and farmer components of real-time price changes.
+   */
+  notifyPriceUpdated(cropName: string, state: string, newPrice: number) {
+    const cacheKey = `${state.toLowerCase()}::${cropName.toLowerCase()}`;
+    this.priceCache.set(cacheKey, newPrice);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(
+        new CustomEvent('smartprocure_price_updated', {
+          detail: { cropName, state, newPrice },
+        })
+      );
+    }
+  }
+
   /**
    * Fetches the official crops supported under government procurement.
    * Pulls from 'crops' PostgreSQL table in Supabase.
@@ -121,6 +138,11 @@ class CropService {
    * State Admin configured rates take precedence.
    */
   async getCropPriceByState(cropName: CropName, state: IndianState): Promise<number> {
+    const cacheKey = `${state.toLowerCase()}::${cropName.toLowerCase()}`;
+    if (this.priceCache.has(cacheKey)) {
+      return this.priceCache.get(cacheKey)!;
+    }
+
     if (isSupabaseConfigured()) {
       try {
         // Query crop_prices joined with crops
@@ -135,7 +157,9 @@ class CropService {
           .maybeSingle();
 
         if (!error && data && data.rate) {
-          return Number(data.rate);
+          const r = Number(data.rate);
+          this.priceCache.set(cacheKey, r);
+          return r;
         }
       } catch (err) {
         console.warn(`Supabase price lookup failed for ${cropName} in ${state}:`, err);
@@ -144,13 +168,16 @@ class CropService {
 
     // Fallback to active state-specific MSP benchmark matrix
     const stateRates = STATE_MSP_BENCHMARKS[state] || STATE_MSP_BENCHMARKS['Punjab'];
-    return stateRates[cropName] ?? 2425;
+    const r = stateRates[cropName] ?? 2425;
+    this.priceCache.set(cacheKey, r);
+    return r;
   }
 
   /**
    * Returns all active prices for a given state from Supabase 'crop_prices'.
    */
   async getActivePricesForState(state: IndianState): Promise<StateCropPrice[]> {
+    let result: StateCropPrice[] = [];
     if (isSupabaseConfigured()) {
       try {
         const { data, error } = await supabase
@@ -160,7 +187,7 @@ class CropService {
           .eq('active', true);
 
         if (!error && data && data.length > 0) {
-          return data.map((row: any) => ({
+          result = data.map((row: any) => ({
             id: row.id,
             cropId: row.crop_id,
             cropName: row.crops?.name as CropName,
@@ -177,19 +204,30 @@ class CropService {
       }
     }
 
-    // Fallback: Generate state prices from state benchmark rates
-    const stateRates = STATE_MSP_BENCHMARKS[state] || STATE_MSP_BENCHMARKS['Punjab'];
-    return BASE_CROPS.map((c) => ({
-      id: `price-${c.name.toLowerCase()}-${state.toLowerCase().replace(/\s+/g, '-')}`,
-      cropId: c.id,
-      cropName: c.name,
-      hindiName: c.hindiName,
-      state,
-      ratePerQuintal: stateRates[c.name] ?? c.configuredRatePerQuintal,
-      unit: c.unit,
-      effectiveFrom: '2026-01-01',
-      active: true,
-    }));
+    if (result.length === 0) {
+      // Fallback: Generate state prices from state benchmark rates
+      const stateRates = STATE_MSP_BENCHMARKS[state] || STATE_MSP_BENCHMARKS['Punjab'];
+      result = BASE_CROPS.map((c) => ({
+        id: `price-${c.name.toLowerCase()}-${state.toLowerCase().replace(/\s+/g, '-')}`,
+        cropId: c.id,
+        cropName: c.name,
+        hindiName: c.hindiName,
+        state,
+        ratePerQuintal: stateRates[c.name] ?? c.configuredRatePerQuintal,
+        unit: c.unit,
+        effectiveFrom: '2026-01-01',
+        active: true,
+      }));
+    }
+
+    // Apply any local cached overrides
+    return result.map((p) => {
+      const cacheKey = `${state.toLowerCase()}::${p.cropName.toLowerCase()}`;
+      if (this.priceCache.has(cacheKey)) {
+        return { ...p, ratePerQuintal: this.priceCache.get(cacheKey)! };
+      }
+      return p;
+    });
   }
 
   /**

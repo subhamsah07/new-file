@@ -83,10 +83,10 @@ export const TrackToken: React.FC = () => {
             <ShieldCheck className="h-3.5 w-3.5 text-emerald-700" />
             <span>Procurement Token Active</span>
           </div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
+          <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">
             Live Queue & Token Status
           </h1>
-          <p className="text-sm text-slate-500 mt-0.5">
+          <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
             Dynamic gate ingress & weighbridge queue telemetry for Token {booking.token}
           </p>
         </div>

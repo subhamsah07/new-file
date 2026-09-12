@@ -57,10 +57,10 @@ export const ProcurementHistory: React.FC = () => {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
+          <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">
             Procurement & Booking History
           </h1>
-          <p className="text-sm text-slate-500 mt-0.5">
+          <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
             Verified electronic records, scheduled slot tokens, and MSP procurement entries
           </p>
         </div>
@@ -74,19 +74,19 @@ export const ProcurementHistory: React.FC = () => {
       </div>
 
       {isLoading ? (
-        <div className="p-12 rounded-2xl border border-slate-200 bg-white flex flex-col items-center justify-center text-center space-y-3">
+        <div className="p-12 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex flex-col items-center justify-center text-center space-y-3">
           <Loader2 className="h-8 w-8 animate-spin text-emerald-600" />
-          <p className="text-sm text-slate-500">Loading your official procurement records from database...</p>
+          <p className="text-sm text-slate-500 dark:text-slate-400">Loading your official procurement records from database...</p>
         </div>
       ) : historyItems.length === 0 ? (
         /* CLEAN EMPTY STATE */
-        <div className="p-12 rounded-2xl border-2 border-dashed border-slate-200 bg-white flex flex-col items-center justify-center text-center space-y-4">
-          <div className="w-14 h-14 rounded-full bg-slate-100 flex items-center justify-center text-slate-400">
+        <div className="p-12 rounded-2xl border-2 border-dashed border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex flex-col items-center justify-center text-center space-y-4">
+          <div className="w-14 h-14 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400 dark:text-slate-500">
             <HistoryIcon className="h-7 w-7" />
           </div>
           <div className="space-y-1">
-            <h3 className="text-lg font-bold text-slate-800">No booking history yet</h3>
-            <p className="text-sm text-slate-500 max-w-md">
+            <h3 className="text-lg font-bold text-slate-800 dark:text-white">No booking history yet</h3>
+            <p className="text-sm text-slate-500 dark:text-slate-400 max-w-md">
               You do not have any recorded procurement bookings in the central system yet. Schedule a slot to begin government mandi procurement.
             </p>
           </div>
@@ -100,7 +100,7 @@ export const ProcurementHistory: React.FC = () => {
       ) : (
         <div className="space-y-4">
           {historyItems.map((item) => (
-            <Card key={item.id} className="border-slate-200 shadow-sm overflow-hidden">
+            <Card key={item.id} className="border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm overflow-hidden">
               <div className="bg-slate-900 text-white px-5 py-3 flex flex-wrap items-center justify-between gap-3 text-xs">
                 <div className="flex items-center gap-3">
                   <span className="font-mono font-bold text-emerald-400 bg-slate-800 px-2.5 py-1 rounded">
@@ -121,37 +121,37 @@ export const ProcurementHistory: React.FC = () => {
                     <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
                       Procured Crop
                     </span>
-                    <span className="text-base font-extrabold text-slate-900 block mt-0.5">
+                    <span className="text-base font-extrabold text-slate-900 dark:text-white block mt-0.5">
                       {item.cropName}
                     </span>
-                    <span className="text-xs text-slate-500">Slot Date: {item.bookingDate}</span>
+                    <span className="text-xs text-slate-500 dark:text-slate-400">Slot Date: {item.bookingDate}</span>
                   </div>
 
                   <div>
                     <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
                       Quantity
                     </span>
-                    <span className="text-base font-extrabold text-slate-900 block mt-0.5">
+                    <span className="text-base font-extrabold text-slate-900 dark:text-white block mt-0.5">
                       {formatQuantityQuintals(item.quantityQuintals)}
                     </span>
-                    <span className="text-xs text-slate-500">Declared Lot</span>
+                    <span className="text-xs text-slate-500 dark:text-slate-400">Declared Lot</span>
                   </div>
 
                   <div>
                     <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
                       Government MSP Rate
                     </span>
-                    <span className="text-base font-extrabold text-slate-900 block mt-0.5">
+                    <span className="text-base font-extrabold text-slate-900 dark:text-white block mt-0.5">
                       ₹{item.ratePerQuintal} / Q
                     </span>
-                    <span className="text-xs text-slate-500">Benchmark MSP</span>
+                    <span className="text-xs text-slate-500 dark:text-slate-400">Benchmark MSP</span>
                   </div>
 
                   <div>
-                    <span className="text-[11px] font-bold text-emerald-700 uppercase tracking-wider block">
+                    <span className="text-[11px] font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-wider block">
                       Estimated Value
                     </span>
-                    <span className="text-lg font-black text-emerald-800 block mt-0.5">
+                    <span className="text-lg font-black text-emerald-800 dark:text-emerald-300 block mt-0.5">
                       {formatCurrencyINR(item.estimatedValue)}
                     </span>
                     <span className="text-[11px] text-slate-400">
@@ -160,14 +160,14 @@ export const ProcurementHistory: React.FC = () => {
                   </div>
                 </div>
 
-                <div className="pt-3 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-slate-500">
+                <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-slate-500 dark:text-slate-400">
                   <span className="flex items-center gap-1.5">
-                    <MapPin className="h-3.5 w-3.5 text-emerald-700 shrink-0" />
-                    Centre: <strong className="text-slate-800">{item.centreName}</strong>
+                    <MapPin className="h-3.5 w-3.5 text-emerald-700 dark:text-emerald-400 shrink-0" />
+                    Centre: <strong className="text-slate-800 dark:text-slate-200">{item.centreName}</strong>
                   </span>
                   <div className="flex items-center gap-3">
-                    <span className="text-slate-500">
-                      Slot: <strong className="text-emerald-800 font-semibold">{item.assignedSlotTime}</strong> ({item.assignedDate || item.bookingDate})
+                    <span className="text-slate-500 dark:text-slate-400">
+                      Slot: <strong className="text-emerald-800 dark:text-emerald-300 font-semibold">{item.assignedSlotTime}</strong> ({item.assignedDate || item.bookingDate})
                     </span>
                   </div>
                 </div>

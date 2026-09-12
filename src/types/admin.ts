@@ -26,6 +26,7 @@ export interface StateAdminDetails {
 }
 
 export interface AdminOverviewStats {
+  totalRequests: number;
   todayRequests: number;
   pendingVerification: number;
   inProgress: number;

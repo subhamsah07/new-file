@@ -98,9 +98,14 @@ export const AdminRequests: React.FC = () => {
             <span className="w-2 h-2 rounded-full bg-emerald-600" />
             Intake Verification Control
           </div>
-          <h1 className="text-2xl font-bold text-slate-900 mt-1">
-            Procurement Requests ({assignedState})
-          </h1>
+          <div className="flex items-center gap-3 mt-1">
+            <h1 className="text-2xl font-bold text-slate-900">
+              Procurement Requests ({assignedState})
+            </h1>
+            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
+              {requests.length} Total Requests Received
+            </span>
+          </div>
           <p className="text-xs sm:text-sm text-slate-500 mt-1">
             Real grain arrival bookings and physical inspection logs. Data restricted to {assignedState}.
           </p>

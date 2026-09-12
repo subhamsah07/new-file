@@ -24,6 +24,7 @@ import {
   PaymentStatus,
 } from '../types/database';
 import { DEFAULT_CENTRES } from './centreService';
+import { cropService } from './cropService';
 
 class AdminService {
   /**
@@ -104,6 +105,7 @@ class AdminService {
     if (centreIds.length === 0) {
       return {
         stats: {
+          totalRequests: 0,
           todayRequests: 0,
           pendingVerification: 0,
           inProgress: 0,
@@ -205,6 +207,7 @@ class AdminService {
 
     return {
       stats: {
+        totalRequests: allBookings.length,
         todayRequests,
         pendingVerification,
         inProgress,
@@ -664,39 +667,81 @@ class AdminService {
   }
 
   /**
-   * Progresses the 7-step procurement workflow foundation.
+   * Progresses the 7-step procurement workflow foundation with persistent checkpoints.
    */
   async advanceWorkflowStatus(params: {
     bookingId: string;
     newStatus: ProcurementWorkflowStatus;
     verifiedQuantity?: number;
     verifiedRate?: number;
+    paymentReference?: string;
     notes?: string;
   }): Promise<boolean> {
     if (!isSupabaseConfigured()) return false;
 
     const { data: { user } } = await supabase.auth.getUser();
 
-    // Get or create procurement_request
-    const { data: pr } = await supabase
+    // 1. Get or create procurement_request record
+    let { data: pr } = await supabase
       .from('procurement_requests')
       .select('*')
       .eq('booking_id', params.bookingId)
       .maybeSingle();
 
-    if (!pr) return false;
+    if (!pr) {
+      // Fetch booking details to initialize procurement_request
+      const { data: b } = await supabase
+        .from('bookings')
+        .select(`
+          id,
+          token,
+          farmer_id,
+          centre_id,
+          crop_id,
+          quantity,
+          crops ( name ),
+          procurement_centres ( state )
+        `)
+        .eq('id', params.bookingId)
+        .maybeSingle();
+
+      if (!b) return false;
+
+      const estRate = params.verifiedRate || 2425;
+      const { data: newPr, error: createPrErr } = await supabase
+        .from('procurement_requests')
+        .insert({
+          booking_id: b.id,
+          farmer_id: b.farmer_id,
+          centre_id: b.centre_id,
+          crop_id: b.crop_id,
+          submitted_quantity: b.quantity,
+          configured_rate: estRate,
+          estimated_value: Number(b.quantity) * estRate,
+          status: params.newStatus,
+        })
+        .select()
+        .single();
+
+      if (createPrErr || !newPr) {
+        console.error('Failed to initialize procurement_request:', createPrErr);
+        return false;
+      }
+      pr = newPr;
+    }
 
     const updatePayload: any = {
       status: params.newStatus,
+      updated_at: new Date().toISOString(),
     };
 
-    if (params.verifiedQuantity) {
+    if (params.verifiedQuantity !== undefined) {
       updatePayload.verified_quantity = params.verifiedQuantity;
     }
-    if (params.verifiedRate) {
+    if (params.verifiedRate !== undefined) {
       updatePayload.verified_rate = params.verifiedRate;
     }
-    if (params.verifiedQuantity && params.verifiedRate) {
+    if (params.verifiedQuantity !== undefined && params.verifiedRate !== undefined) {
       updatePayload.final_value = params.verifiedQuantity * params.verifiedRate;
     }
 
@@ -705,14 +750,37 @@ class AdminService {
       .update(updatePayload)
       .eq('id', pr.id);
 
-    if (updErr) return false;
+    if (updErr) {
+      console.error('Failed to update procurement_requests:', updErr);
+      return false;
+    }
 
-    // Determine verification checkpoint
+    // 2. Insert auditable verification checkpoint into public.verification_records
     let vType: any = null;
-    if (params.newStatus === 'qr_verified') vType = 'QR verification';
-    else if (params.newStatus === 'document_verification') vType = 'document verification';
-    else if (params.newStatus === 'weight_rate_verification') vType = 'weight verification';
-    else if (params.newStatus === 'procurement_completed') vType = 'rate verification';
+    let defaultNotes = `Advanced to ${params.newStatus}`;
+
+    if (params.newStatus === 'booking') {
+      vType = 'document verification';
+      defaultNotes = 'Procurement intake started by Mandi Officer';
+    } else if (params.newStatus === 'qr_verified') {
+      vType = 'QR verification';
+      defaultNotes = 'QR code & identifier verified at intake checkpoint';
+    } else if (params.newStatus === 'document_verification') {
+      vType = 'document verification';
+      defaultNotes = 'Aadhaar Card and Farmer Identity Card verified';
+    } else if (params.newStatus === 'weight_rate_verification') {
+      vType = 'weight verification';
+      defaultNotes = 'Weighbridge measurement & MSP rate certified';
+    } else if (params.newStatus === 'procurement_completed') {
+      vType = 'rate verification';
+      defaultNotes = 'Procurement verified. Awaiting DBT payout disbursement.';
+    } else if (params.newStatus === 'payment_processing') {
+      vType = 'rate verification';
+      defaultNotes = 'Payment pending DBT banking disbursement';
+    } else if (params.newStatus === 'payment_completed') {
+      vType = 'rate verification';
+      defaultNotes = 'Payment completed and credited to farmer account via DBT';
+    }
 
     if (vType) {
       await supabase.from('verification_records').insert({
@@ -720,28 +788,44 @@ class AdminService {
         verification_type: vType,
         status: 'verified',
         verified_by: user?.id || null,
-        notes: params.notes || `Advanced to ${params.newStatus}`,
+        notes: params.notes || defaultNotes,
         verified_at: new Date().toISOString(),
       });
     }
 
-    // Sync booking status if completed
-    if (params.newStatus === 'procurement_completed' || params.newStatus === 'payment_completed') {
+    // 3. Keep bookings status in sync
+    if (params.newStatus === 'payment_completed') {
       await supabase
         .from('bookings')
         .update({ booking_status: 'completed', updated_at: new Date().toISOString() })
         .eq('id', params.bookingId);
+    } else {
+      // Any intermediate step (including procurement_completed / payment_processing) means active
+      await supabase
+        .from('bookings')
+        .update({ booking_status: 'in_progress', updated_at: new Date().toISOString() })
+        .eq('id', params.bookingId);
     }
 
-    // Manage payment record & persistent notifications
-    if (params.newStatus === 'procurement_completed') {
-      const payoutAmount = updatePayload.final_value || pr.final_value || pr.estimated_value || 0;
-      if (payoutAmount > 0) {
+    // 4. Manage payments record & farmer notifications
+    const finalVal =
+      updatePayload.final_value ||
+      (pr.verified_quantity && pr.verified_rate ? pr.verified_quantity * pr.verified_rate : null) ||
+      pr.final_value ||
+      pr.estimated_value ||
+      0;
+
+    const rate = params.verifiedRate || pr.verified_rate || pr.configured_rate || 2425;
+    const qty = params.verifiedQuantity || pr.verified_quantity || pr.submitted_quantity || 0;
+
+    if (params.newStatus === 'procurement_completed' || params.newStatus === 'payment_processing') {
+      // Upsert payment as 'pending'
+      if (finalVal > 0) {
         await supabase.from('payments').upsert(
           {
             procurement_request_id: pr.id,
             farmer_id: pr.farmer_id,
-            amount: payoutAmount,
+            amount: finalVal,
             payment_status: 'pending',
             updated_at: new Date().toISOString(),
           },
@@ -749,60 +833,39 @@ class AdminService {
         );
       }
 
-      // Fetch booking & centre details for detailed notification
-      const { data: bData } = await supabase
-        .from('bookings')
-        .select(`
-          token,
-          procurement_centres ( name ),
-          crops ( name )
-        `)
-        .eq('id', params.bookingId)
-        .maybeSingle();
-
-      const token = bData?.token || 'N/A';
-      const centreName = (bData as any)?.procurement_centres?.name || 'Mandi Centre';
-      const cropName = (bData as any)?.crops?.name || 'Wheat';
-      const qty = params.verifiedQuantity || pr.verified_quantity || pr.submitted_quantity || 0;
-
-      await supabase.from('notifications').insert({
-        farmer_id: pr.farmer_id,
-        booking_id: params.bookingId,
-        type: 'queue',
-        title: 'Procurement Completed',
-        message: `Your procurement has been successfully completed.\n\nToken: ${token}\nCentre: ${centreName}\nCrop: ${cropName}\nQuantity: ${qty} Quintal`,
-        read: false,
-      });
-    } else if (params.newStatus === 'payment_processing') {
-      await supabase
-        .from('payments')
-        .update({ payment_status: 'processing', updated_at: new Date().toISOString() })
-        .eq('procurement_request_id', pr.id);
-
       await supabase.from('notifications').insert({
         farmer_id: pr.farmer_id,
         booking_id: params.bookingId,
         type: 'payment',
-        title: 'Payment Processing',
-        message: 'Your procurement payout is being processed via Direct Benefit Transfer (DBT).',
+        title: 'Procurement Done - Payment Pending',
+        message: `Your grain procurement is certified! Weighed: ${qty} Quintals at MSP Rate: ₹${rate}/Quintal. Payout amount of ₹${finalVal.toLocaleString('en-IN')} is scheduled for Direct Benefit Transfer (DBT) disbursement.`,
         read: false,
       });
     } else if (params.newStatus === 'payment_completed') {
-      await supabase
-        .from('payments')
-        .update({
+      const ref = params.paymentReference || `DBT-MSP-${Date.now().toString().slice(-8)}`;
+
+      // Update payment record to completed
+      await supabase.from('payments').upsert(
+        {
+          procurement_request_id: pr.id,
+          farmer_id: pr.farmer_id,
+          amount: finalVal,
           payment_status: 'completed',
+          payment_reference: ref,
+          processed_by: user?.id || null,
           processed_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
-        })
-        .eq('procurement_request_id', pr.id);
+        },
+        { onConflict: 'procurement_request_id' }
+      );
 
+      // Send explicit completion notification with rate and credited confirmation
       await supabase.from('notifications').insert({
         farmer_id: pr.farmer_id,
         booking_id: params.bookingId,
         type: 'payment',
-        title: 'Payment Completed',
-        message: 'Your payment has been successfully disbursed to your bank account via DBT.',
+        title: 'Payment Completed & Credited',
+        message: `Payment completed! ₹${finalVal.toLocaleString('en-IN')} (MSP Rate: ₹${rate}/Quintal, Weighed: ${qty} Quintals) has been successfully credited to your bank account via Direct Benefit Transfer.\nTransaction Ref (UTR): ${ref}`,
         read: false,
       });
     }
@@ -1006,6 +1069,13 @@ class AdminService {
         let newPrStatus: any = null;
         if (params.status === 'completed') {
           newPrStatus = 'payment_completed';
+          // Mark booking completed
+          if (pr.booking_id) {
+            await supabase
+              .from('bookings')
+              .update({ booking_status: 'completed', updated_at: new Date().toISOString() })
+              .eq('id', pr.booking_id);
+          }
         } else if (params.status === 'processing') {
           newPrStatus = 'payment_processing';
         } else if (params.status === 'pending') {
@@ -1020,7 +1090,7 @@ class AdminService {
         }
       }
 
-      // 4. Create persistent in-app notification for the farmer (Part G)
+      // 4. Create persistent in-app notification for the farmer
       const farmerId = payment.farmer_id;
       const bookingId = pr?.booking_id || null;
       const amount = Number(payment.amount) || 0;
@@ -1031,8 +1101,8 @@ class AdminService {
           farmer_id: farmerId,
           booking_id: bookingId,
           type: 'payment',
-          title: 'Payment Completed',
-          message: `Your payment of ₹${amount.toLocaleString('en-IN')} has been successfully disbursed.${ref ? `\nReference (UTR): ${ref}` : ''}`,
+          title: 'Payment Completed & Credited',
+          message: `Payment completed! ₹${amount.toLocaleString('en-IN')} has been credited to your bank account via Direct Benefit Transfer (DBT).${ref ? `\nReference (UTR): ${ref}` : ''}`,
           read: false,
         });
       } else if (params.status === 'processing') {
@@ -1138,6 +1208,17 @@ class AdminService {
 
       if (error) {
         return { success: false, error: error.message };
+      }
+
+      // Automatically notify cropService so that any farmer in this state has crop prices immediately revised
+      const { data: cRow } = await supabase
+        .from('crops')
+        .select('name')
+        .eq('id', params.cropId)
+        .maybeSingle();
+
+      if (cRow?.name) {
+        cropService.notifyPriceUpdated(params.state, cRow.name, params.rate);
       }
 
       return { success: true };

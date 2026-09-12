@@ -105,8 +105,19 @@ export const BookSlot: React.FC = () => {
       }
     }
     fetchPrice();
+
+    // Listen for state admin crop price updates in real-time
+    const handlePriceUpdate = (e: any) => {
+      const detail = e.detail;
+      if (detail && detail.cropName === selectedCropName && detail.state === farmerState) {
+        setActiveRatePerQuintal(detail.newPrice);
+      }
+    };
+    window.addEventListener('smartprocure_price_updated', handlePriceUpdate);
+
     return () => {
       active = false;
+      window.removeEventListener('smartprocure_price_updated', handlePriceUpdate);
     };
   }, [selectedCropName, farmerState]);
 
@@ -326,10 +337,10 @@ export const BookSlot: React.FC = () => {
           <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-emerald-100 text-emerald-700 border-2 border-emerald-300 shadow-sm mx-auto">
             <CheckCircle2 className="h-9 w-9" />
           </div>
-          <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">
+          <h1 className="text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">
             Booking Confirmed
           </h1>
-          <p className="text-sm text-slate-600">
+          <p className="text-sm text-slate-600 dark:text-slate-400">
             Your foodgrain procurement slot has been scheduled and stored in the central register.
           </p>
         </div>
@@ -488,15 +499,15 @@ export const BookSlot: React.FC = () => {
     <div className="space-y-6 max-w-3xl mx-auto">
       <div>
         <div className="flex items-center gap-2 mb-2">
-          <Link to="/farmer" className="text-xs font-semibold text-slate-500 hover:text-emerald-700 flex items-center gap-1">
+          <Link to="/farmer" className="text-xs font-semibold text-slate-500 dark:text-slate-400 hover:text-emerald-700 dark:hover:text-emerald-400 flex items-center gap-1">
             <ArrowLeft className="h-3.5 w-3.5" />
             <span>Back to Dashboard</span>
           </Link>
         </div>
-        <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
+        <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">
           Book Procurement Slot
         </h1>
-        <p className="text-sm text-slate-500 mt-0.5">
+        <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
           Select foodgrain commodity, declared harvest quantity, and preferred arrival window for {farmerState}
         </p>
       </div>
@@ -592,22 +603,13 @@ export const BookSlot: React.FC = () => {
             </div>
 
             {/* Estimated Procurement Value Box */}
-            <div className="p-4 rounded-xl bg-slate-900 text-white flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-md">
-              <div>
-                <span className="text-[11px] font-bold text-emerald-400 uppercase tracking-wider block">
-                  Estimated Procurement Value
-                </span>
-                <span className="text-2xl sm:text-3xl font-black text-white block mt-0.5">
-                  {formatCurrencyINR(estimatedValue)}
-                </span>
-                <span className="text-[10px] text-slate-400">
-                  {quantity} Quintals &times; ₹{activeRatePerQuintal}/Q ({farmerState})
-                </span>
-              </div>
-              <div className="text-xs text-slate-300 max-w-xs text-right sm:border-l sm:border-slate-700 sm:pl-4">
-                <span className="font-semibold text-amber-300 block">Clearly Labeled as Estimated:</span>
-                Final payment is certified upon weighbridge gross and tare weight deduction under Fair Average Quality standards.
-              </div>
+            <div className="p-4 rounded-xl bg-slate-900 dark:bg-slate-950 border border-slate-800 text-white shadow-md">
+              <span className="text-xs font-bold text-slate-300 dark:text-slate-400 uppercase tracking-wider block">
+                Estimated Procurement Value
+              </span>
+              <span className="text-2xl sm:text-3xl font-black text-orange-500 block mt-1">
+                {formatCurrencyINR(estimatedValue)}
+              </span>
             </div>
           </CardContent>
         </Card>

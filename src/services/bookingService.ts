@@ -22,6 +22,7 @@ import {
 import { isSupabaseConfigured, supabase } from '../lib/supabase';
 import { cropService } from './cropService';
 import { centreService } from './centreService';
+import { notificationService } from './notificationService';
 
 /**
  * Next feasible appointment window recommendation
@@ -1145,6 +1146,20 @@ class BookingService {
       });
     } catch {
       /* non-blocking audit trail */
+    }
+
+    // Create persistent in-app notification for the farmer
+    try {
+      const centreName = (completeRecord.procurement_centres as any)?.name || params.centreName || 'Procurement Centre';
+      await notificationService.createNotification({
+        farmerId: currentUserId,
+        bookingId: persistedRecord.id,
+        type: 'booking',
+        title: 'Procurement Slot Booked',
+        message: `Your procurement slot has been confirmed for ${params.quantityQuintals} Quintal ${params.cropName || 'harvest'} at ${centreName}.\nToken: ${persistedRecord.token}\nScheduled: ${assignedSlot.formattedDisplay}`,
+      });
+    } catch (notifErr) {
+      console.warn('[BookingService] Failed to create booking notification:', notifErr);
     }
 
     return mapDbBookingToUi(completeRecord, rate);

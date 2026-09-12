@@ -217,15 +217,37 @@ export const AdminDashboard: React.FC = () => {
       )}
 
       {/* KPI Metrics */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+        {/* Total Requests Got (Actual Count) */}
+        <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-xs flex flex-col justify-between">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-slate-700 uppercase tracking-wider">
+              Total Requests Got
+            </span>
+            <div className="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-700 flex items-center justify-center">
+              <ClipboardList className="w-4 h-4" />
+            </div>
+          </div>
+          <div className="mt-4">
+            <div className="text-3xl font-bold text-slate-900">
+              {loading ? (
+                <span className="w-8 h-8 inline-block bg-slate-100 rounded animate-pulse" />
+              ) : (
+                stats?.totalRequests ?? requests.length ?? 0
+              )}
+            </div>
+            <p className="text-[11px] text-slate-500 mt-1">Actual farmer booking requests</p>
+          </div>
+        </div>
+
         {/* Today's Requests */}
         <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-xs flex flex-col justify-between">
           <div className="flex items-center justify-between">
             <span className="text-xs font-medium text-slate-500 uppercase tracking-wider">
-              Today's Requests
+              Today's Slots
             </span>
             <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-700 flex items-center justify-center">
-              <ClipboardList className="w-4 h-4" />
+              <Calendar className="w-4 h-4" />
             </div>
           </div>
           <div className="mt-4">
