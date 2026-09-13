@@ -19,6 +19,7 @@ import {
   PhoneCall,
   Check,
   Search,
+  Play,
 } from 'lucide-react';
 
 export const AdminDashboard: React.FC = () => {
@@ -126,27 +127,6 @@ export const AdminDashboard: React.FC = () => {
       }
     } catch (err) {
       console.error('Queue check-in failed:', err);
-    } finally {
-      setProcessingId(null);
-    }
-  };
-
-  const handleQueueComplete = async (req: AdminRequestItem) => {
-    setProcessingId(req.id);
-    setActionMessage(null);
-    try {
-      const success = await adminService.logQueueAction({
-        centreId: req.centreId,
-        bookingId: req.id,
-        eventType: 'processing_completed',
-        notes: `Procurement completed for Token ${req.token}.`,
-      });
-      if (success) {
-        setActionMessage(`Token ${req.token} marked as Completed.`);
-        await loadAll();
-      }
-    } catch (err) {
-      console.error('Queue complete failed:', err);
     } finally {
       setProcessingId(null);
     }
@@ -532,19 +512,54 @@ export const AdminDashboard: React.FC = () => {
                       </div>
                     </td>
                     <td className="py-3.5 px-4">
-                      <span
-                        className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold ${
-                          req.bookingStatus === 'completed'
-                            ? 'bg-emerald-100 text-emerald-900 border border-emerald-300'
-                            : req.bookingStatus === 'in_progress'
-                            ? 'bg-blue-100 text-blue-900 border border-blue-300'
-                            : req.bookingStatus === 'cancelled'
-                            ? 'bg-red-100 text-red-900 border border-red-300'
-                            : 'bg-amber-100 text-amber-900 border border-amber-300'
-                        }`}
-                      >
-                        {req.bookingStatus === 'in_progress' ? 'In Progress' : req.bookingStatus}
-                      </span>
+                      {(() => {
+                        const isProcurementCompleted =
+                          req.bookingStatus === 'completed' ||
+                          req.workflowStatus === 'procurement_completed' ||
+                          req.workflowStatus === 'payment_processing' ||
+                          req.workflowStatus === 'payment_completed';
+
+                        const isPaymentDone =
+                          req.paymentStatus === 'completed' ||
+                          req.workflowStatus === 'payment_completed';
+
+                        if (isProcurementCompleted) {
+                          if (isPaymentDone) {
+                            return (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-900 border border-emerald-300">
+                                Completed
+                              </span>
+                            );
+                          }
+                          return (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300">
+                              Payment Pending
+                            </span>
+                          );
+                        }
+
+                        if (req.bookingStatus === 'in_progress') {
+                          return (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-900 border border-blue-300">
+                              In Progress
+                            </span>
+                          );
+                        }
+
+                        if (req.bookingStatus === 'cancelled') {
+                          return (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-900 border border-red-300">
+                              Cancelled
+                            </span>
+                          );
+                        }
+
+                        return (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-800 border border-slate-300">
+                            Booked
+                          </span>
+                        );
+                      })()}
                     </td>
                     <td className="py-3.5 px-4 text-right">
                       <div className="flex items-center justify-end gap-1.5">
@@ -561,18 +576,19 @@ export const AdminDashboard: React.FC = () => {
                           </button>
                         )}
 
-                        {req.bookingStatus === 'in_progress' && (
-                          <button
-                            type="button"
-                            disabled={processingId === req.id}
-                            onClick={() => handleQueueComplete(req)}
-                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-emerald-800 hover:bg-emerald-900 text-white text-[11px] font-semibold transition shadow-xs disabled:opacity-50"
-                            title="Complete procurement process"
-                          >
-                            <Check className="w-3 h-3" />
-                            <span>Complete</span>
-                          </button>
-                        )}
+                        {req.bookingStatus === 'in_progress' &&
+                          req.workflowStatus !== 'procurement_completed' &&
+                          req.workflowStatus !== 'payment_processing' &&
+                          req.workflowStatus !== 'payment_completed' && (
+                            <Link
+                              to={`/admin/requests/${req.id}`}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-emerald-700 hover:bg-emerald-800 text-white text-[11px] font-semibold transition shadow-xs"
+                              title="Start Procurement"
+                            >
+                              <Play className="w-3 h-3 fill-current" />
+                              <span>Start</span>
+                            </Link>
+                          )}
 
                         <Link
                           to={`/admin/requests/${req.id}`}

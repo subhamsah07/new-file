@@ -157,6 +157,7 @@ export interface ProcurementBooking {
   assignedStartTime?: string;        // System assigned slot start e.g. "09:00:00"
   assignedEndTime?: string;          // System assigned slot end e.g. "10:00:00"
   workflowStatus: ProcurementWorkflowStatus;
+  bookingStatus?: string;
   
   // Queue Intelligence attributes
   queuePosition: number;             // Position in live queue (1 = currently being attended or next)

@@ -6,6 +6,7 @@ import { cropService } from '../../services/cropService';
 import { AdminRequestItem, VerificationRecordItem } from '../../types/admin';
 import { ProcurementWorkflowStatus } from '../../types/database';
 import jsQR from 'jsqr';
+import { motion, AnimatePresence } from 'motion/react';
 import {
   ArrowLeft,
   CheckCircle2,
@@ -31,6 +32,8 @@ import {
   ExternalLink,
   IndianRupee,
   ShieldAlert,
+  Upload,
+  XCircle,
 } from 'lucide-react';
 
 export const AdminRequestDetail: React.FC = () => {
@@ -45,16 +48,17 @@ export const AdminRequestDetail: React.FC = () => {
   const [statusMessage, setStatusMessage] = React.useState<{ type: 'success' | 'error' | 'info'; text: string } | null>(null);
 
   // QR Scanner State
-  const [qrMode, setQrMode] = React.useState<'scanner' | 'manual'>('scanner');
   const [cameraActive, setCameraActive] = React.useState(false);
   const [cameraError, setCameraError] = React.useState<string | null>(null);
   const [scannedQrCode, setScannedQrCode] = React.useState<string | null>(null);
-  const [manualQrInput, setManualQrInput] = React.useState('');
   const [qrVerifiedSuccess, setQrVerifiedSuccess] = React.useState(false);
+  const [qrVerificationStatus, setQrVerificationStatus] = React.useState<'idle' | 'verified' | 'not_verified'>('idle');
   const videoRef = React.useRef<HTMLVideoElement | null>(null);
   const canvasRef = React.useRef<HTMLCanvasElement | null>(null);
   const streamRef = React.useRef<MediaStream | null>(null);
   const animationFrameRef = React.useRef<number | null>(null);
+  const isScanningRef = React.useRef<boolean>(false);
+  const fileInputRef = React.useRef<HTMLInputElement | null>(null);
 
   // Document Verification State
   const [aadhaarVerified, setAadhaarVerified] = React.useState(false);
@@ -88,7 +92,6 @@ export const AdminRequestDetail: React.FC = () => {
         setRequest(data.request);
         setVerificationRecords(data.verificationRecords);
         setGivenWeight(data.request.quantityQuintals);
-        setManualQrInput(data.request.qrIdentifier || data.request.token);
 
         // Fetch state-specific revised MSP rate
         try {
@@ -104,14 +107,27 @@ export const AdminRequestDetail: React.FC = () => {
         // Generate default UTR reference for payment completion
         setPaymentUtr(`DBT-${assignedState.slice(0, 2).toUpperCase()}-${Date.now().toString().slice(-8)}`);
 
-        // Check if QR or Documents were already completed in previous checkpoints
-        const hasQrRecord = data.verificationRecords.some((r) => r.verificationType === 'QR verification');
-        if (hasQrRecord || data.request.workflowStatus !== 'booking') {
+        // Check if QR was already completed in subsequent checkpoints (steps 3-7)
+        const isPastQrStep = [
+          'document_verification',
+          'weight_rate_verification',
+          'procurement_completed',
+          'payment_processing',
+          'payment_completed',
+        ].includes(data.request.workflowStatus);
+
+        if (isPastQrStep) {
           setQrVerifiedSuccess(true);
+          setQrVerificationStatus('verified');
+        } else {
+          // On active QR verification step: must be scanned in this session
+          setQrVerifiedSuccess(false);
+          setQrVerificationStatus('idle');
+          setScannedQrCode(null);
         }
 
         const hasDocRecord = data.verificationRecords.some((r) => r.verificationType === 'document verification');
-        if (hasDocRecord || ['weight_rate_verification', 'procurement_completed', 'payment_processing', 'payment_completed'].includes(data.request.workflowStatus)) {
+        if (hasDocRecord || isPastQrStep) {
           setAadhaarVerified(true);
           setFarmerIdCardVerified(true);
         }
@@ -147,33 +163,77 @@ export const AdminRequestDetail: React.FC = () => {
     return request.workflowStatus !== 'booking' || verificationRecords.length > 0;
   }, [request, verificationRecords]);
 
+  // QR matching logic: checks scanned text against request token, qrIdentifier, and ID
+  const checkQrMatch = (scannedText: string, targetReq: AdminRequestItem | null): boolean => {
+    if (!scannedText || !targetReq) return false;
+    const raw = scannedText.trim();
+    const lower = raw.toLowerCase();
+    const token = (targetReq.token || '').trim().toLowerCase();
+    const qrId = (targetReq.qrIdentifier || '').trim().toLowerCase();
+    const id = (targetReq.id || '').trim().toLowerCase();
+
+    // 1. Direct equality match
+    if (token && lower === token) return true;
+    if (qrId && lower === qrId) return true;
+    if (id && lower === id) return true;
+
+    // 2. Substring matching (e.g. SMARTPROCURE:id or URL with token)
+    if (token && lower.includes(token)) return true;
+    if (qrId && lower.includes(qrId)) return true;
+    if (id && lower.includes(id)) return true;
+
+    // 3. JSON payload parse
+    try {
+      const obj = JSON.parse(raw);
+      if (obj.token && obj.token.toLowerCase() === token) return true;
+      if (obj.qrIdentifier && obj.qrIdentifier.toLowerCase() === qrId) return true;
+      if (obj.bookingId && obj.bookingId.toLowerCase() === id) return true;
+      if (obj.id && obj.id.toLowerCase() === id) return true;
+    } catch {}
+
+    return false;
+  };
+
   // Camera QR Scanner handlers
   const startCamera = async () => {
     setCameraError(null);
     try {
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        setCameraError('Camera API not accessible in current browser environment. Use Manual Identifier or Emulate Scan.');
+        setCameraError('Camera API not accessible in this browser window. Use Image Upload or Manual Identifier.');
         return;
       }
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment', width: { ideal: 640 }, height: { ideal: 480 } },
-      });
+
+      // Stop any existing stream
+      stopCamera();
+
+      let stream: MediaStream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
+        });
+      } catch {
+        stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      }
+
       streamRef.current = stream;
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         videoRef.current.setAttribute('playsinline', 'true');
-        videoRef.current.play();
+        await videoRef.current.play();
         setCameraActive(true);
+        isScanningRef.current = true;
         scanQrFrame();
       }
     } catch (err: any) {
       console.warn('Camera stream failed:', err);
-      setCameraError('Unable to open camera feed. You may use "Simulate Scan" or enter the QR Identifier number below.');
+      setCameraError('Unable to open camera feed. Check browser camera permissions or use Image Upload / Manual Identifier below.');
       setCameraActive(false);
+      isScanningRef.current = false;
     }
   };
 
   const stopCamera = () => {
+    isScanningRef.current = false;
     if (animationFrameRef.current) {
       cancelAnimationFrame(animationFrameRef.current);
       animationFrameRef.current = null;
@@ -186,57 +246,104 @@ export const AdminRequestDetail: React.FC = () => {
   };
 
   const scanQrFrame = () => {
-    if (!videoRef.current || !canvasRef.current || !cameraActive) return;
+    if (!isScanningRef.current) return;
 
     const video = videoRef.current;
     const canvas = canvasRef.current;
-    const ctx = canvas.getContext('2d');
 
-    if (video.readyState === video.HAVE_ENOUGH_DATA && ctx) {
-      canvas.height = video.videoHeight;
-      canvas.width = video.videoWidth;
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      const code = jsQR(imageData.data, imageData.width, imageData.height, {
-        inversionAttempts: 'dontInvert',
-      });
+    if (video && canvas) {
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      if (ctx && video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA && video.videoWidth > 0 && video.videoHeight > 0) {
+        const maxDim = 640;
+        let w = video.videoWidth;
+        let h = video.videoHeight;
+        if (w > maxDim || h > maxDim) {
+          if (w > h) {
+            h = Math.round((h * maxDim) / w);
+            w = maxDim;
+          } else {
+            w = Math.round((w * maxDim) / h);
+            h = maxDim;
+          }
+        }
 
-      if (code && code.data) {
-        handleQrDetected(code.data);
-        return;
+        canvas.width = w;
+        canvas.height = h;
+        ctx.drawImage(video, 0, 0, w, h);
+        const imageData = ctx.getImageData(0, 0, w, h);
+        const code = jsQR(imageData.data, imageData.width, imageData.height, {
+          inversionAttempts: 'attemptBoth',
+        });
+
+        if (code && code.data && code.data.trim()) {
+          handleQrDetected(code.data.trim());
+          return;
+        }
       }
     }
 
-    animationFrameRef.current = requestAnimationFrame(scanQrFrame);
+    if (isScanningRef.current) {
+      animationFrameRef.current = requestAnimationFrame(scanQrFrame);
+    }
   };
 
   const handleQrDetected = (dataString: string) => {
     stopCamera();
     setScannedQrCode(dataString);
-    setManualQrInput(dataString);
-    setQrVerifiedSuccess(true);
-    setStatusMessage({
-      type: 'success',
-      text: `QR Code successfully scanned & matched: "${dataString}"`,
-    });
-  };
 
-  const handleSimulateScan = () => {
-    if (!request) return;
-    const targetCode = request.qrIdentifier || request.token;
-    handleQrDetected(targetCode);
-  };
+    const isMatch = checkQrMatch(dataString, request);
 
-  const handleManualQrVerify = () => {
-    if (!manualQrInput.trim()) {
-      setStatusMessage({ type: 'error', text: 'Please enter a valid QR Identifier number.' });
-      return;
+    if (isMatch) {
+      setQrVerificationStatus('verified');
+      setQrVerifiedSuccess(true);
+      setStatusMessage({
+        type: 'success',
+        text: `VERIFIED: Farmer Token ${request?.token} matched successfully! Physical gate pass authenticated.`,
+      });
+    } else {
+      setQrVerificationStatus('not_verified');
+      setQrVerifiedSuccess(false);
+      setStatusMessage({
+        type: 'error',
+        text: `NOT VERIFIED: Scanned code does NOT match expected Token ${request?.token}. Procurement process stopped until correct QR is scanned.`,
+      });
     }
-    setQrVerifiedSuccess(true);
-    setStatusMessage({
-      type: 'success',
-      text: `QR Identifier "${manualQrInput.trim()}" verified for intake gate check.`,
-    });
+  };
+
+  const handleQrFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        if (ctx) {
+          ctx.drawImage(img, 0, 0);
+          const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          const code = jsQR(imageData.data, imageData.width, imageData.height, {
+            inversionAttempts: 'attemptBoth',
+          });
+          if (code && code.data && code.data.trim()) {
+            handleQrDetected(code.data.trim());
+          } else {
+            setQrVerificationStatus('not_verified');
+            setQrVerifiedSuccess(false);
+            setStatusMessage({
+              type: 'error',
+              text: 'NOT VERIFIED: No valid QR code detected in the uploaded image. Please try another photo.',
+            });
+          }
+        }
+      };
+      img.src = event.target?.result as string;
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
   };
 
   // Workflow Progression Handlers
@@ -255,7 +362,7 @@ export const AdminRequestDetail: React.FC = () => {
     if (ok) {
       setStatusMessage({
         type: 'success',
-        text: 'Procurement started! Checkpoint 1 completed. Please verify the farmer\'s QR code.',
+        text: 'Procurement started! Please scan the farmer\'s QR code to authenticate arrival.',
       });
       await loadDetails();
     } else {
@@ -268,10 +375,10 @@ export const AdminRequestDetail: React.FC = () => {
 
   const handleCompleteQrStep = async () => {
     if (!request) return;
-    if (!qrVerifiedSuccess) {
+    if (!qrVerifiedSuccess || qrVerificationStatus !== 'verified') {
       setStatusMessage({
         type: 'error',
-        text: 'Please scan or verify the farmer QR identifier before saving this checkpoint.',
+        text: 'Procurement process stopped: Please scan and verify the correct farmer QR code before saving this checkpoint.',
       });
       return;
     }
@@ -282,7 +389,7 @@ export const AdminRequestDetail: React.FC = () => {
     const ok = await adminService.advanceWorkflowStatus({
       bookingId: request.id,
       newStatus: 'document_verification',
-      notes: `QR verified via ${scannedQrCode ? 'Optical Scanner' : 'Identifier Matching'}: ${manualQrInput || request.qrIdentifier}`,
+      notes: `QR verified via Optical Scanner for Token ${request.token}`,
     });
 
     setAdvancing(false);
@@ -695,156 +802,232 @@ export const AdminRequestDetail: React.FC = () => {
                     Physical Gate QR Verification
                   </h5>
                   <p className="text-xs text-slate-500">
-                    Scan the farmer's booking pass QR code or confirm the opaque QR Identifier number.
+                    Scan the farmer's booking pass QR code using the gate camera or upload a pass image.
                   </p>
                 </div>
-
                 <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setQrMode('scanner');
-                      startCamera();
-                    }}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition inline-flex items-center gap-1.5 ${
-                      qrMode === 'scanner'
-                        ? 'bg-emerald-600 text-white'
-                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                    }`}
-                  >
-                    <Camera className="w-3.5 h-3.5" />
-                    <span>Scan QR</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setQrMode('manual');
-                      stopCamera();
-                    }}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition inline-flex items-center gap-1.5 ${
-                      qrMode === 'manual'
-                        ? 'bg-emerald-600 text-white'
-                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                    }`}
-                  >
-                    <QrCode className="w-3.5 h-3.5" />
-                    <span>QR Identifier Number</span>
-                  </button>
+                  <span className="text-[11px] font-medium text-slate-500 bg-slate-100 px-2.5 py-1 rounded-full flex items-center gap-1.5">
+                    <QrCode className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>Auto-Scanner Active</span>
+                  </span>
                 </div>
               </div>
 
-              {/* QR Scanner Mode */}
-              {qrMode === 'scanner' && (
-                <div className="space-y-4">
-                  <div className="relative max-w-sm mx-auto bg-slate-900 rounded-xl overflow-hidden aspect-4/3 flex items-center justify-center border border-slate-700">
-                    <video
-                      ref={videoRef}
-                      className={`w-full h-full object-cover ${cameraActive ? 'block' : 'hidden'}`}
-                    />
-                    <canvas ref={canvasRef} className="hidden" />
+              {/* QR Scanner Area */}
+              <div className="space-y-4">
+                <div className="relative max-w-md mx-auto bg-slate-950 rounded-2xl overflow-hidden aspect-4/3 flex items-center justify-center border border-slate-800 shadow-inner">
+                  <video
+                    ref={videoRef}
+                    className={`w-full h-full object-cover ${cameraActive ? 'block' : 'hidden'}`}
+                  />
+                  <canvas ref={canvasRef} className="hidden" />
 
-                    {!cameraActive && (
-                      <div className="p-6 text-center text-slate-300 space-y-3">
-                        <Camera className="w-8 h-8 mx-auto text-slate-400" />
-                        <p className="text-xs">Camera preview is ready.</p>
+                  {!cameraActive && (
+                    <div className="p-6 text-center text-slate-300 space-y-3">
+                      <div className="w-14 h-14 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-center mx-auto text-emerald-400 shadow-sm">
+                        <Camera className="w-7 h-7" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-semibold text-slate-200">Optical Gate Scanner</p>
+                        <p className="text-xs text-slate-400 mt-0.5">
+                          Open camera or upload photo of the farmer's QR pass
+                        </p>
+                      </div>
+                      <div className="flex items-center justify-center gap-2 pt-1">
                         <button
                           type="button"
                           onClick={startCamera}
-                          className="px-4 py-2 rounded-lg bg-emerald-600 text-white text-xs font-semibold hover:bg-emerald-500 shadow-xs"
+                          className="px-4 py-2 rounded-xl bg-emerald-600 text-white text-xs font-semibold hover:bg-emerald-500 shadow-xs transition inline-flex items-center gap-1.5"
                         >
-                          Open Camera Scanner
+                          <Camera className="w-4 h-4" />
+                          <span>Open Gate Camera</span>
                         </button>
+                        <label className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-200 text-xs font-semibold hover:bg-slate-700 cursor-pointer transition">
+                          <Upload className="w-4 h-4 text-slate-400" />
+                          <span>Upload Image</span>
+                          <input type="file" accept="image/*" onChange={handleQrFileUpload} className="hidden" />
+                        </label>
                       </div>
-                    )}
-
-                    {cameraActive && (
-                      <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center">
-                        <div className="w-48 h-48 border-2 border-emerald-400 rounded-2xl relative animate-pulse">
-                          <div className="absolute inset-x-0 top-1/2 h-0.5 bg-emerald-400 shadow-sm" />
-                        </div>
-                        <span className="mt-3 px-3 py-1 rounded bg-black/60 text-white text-[11px] font-mono">
-                          Point camera at Farmer QR Code
-                        </span>
-                      </div>
-                    )}
-                  </div>
-
-                  {cameraError && (
-                    <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800">
-                      {cameraError}
+                      {cameraError && (
+                        <p className="text-[11px] text-red-400 mt-2">{cameraError}</p>
+                      )}
                     </div>
                   )}
 
-                  <div className="flex flex-wrap items-center justify-center gap-3">
-                    {cameraActive && (
-                      <button
-                        type="button"
-                        onClick={stopCamera}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-300"
-                      >
-                        <CameraOff className="w-3.5 h-3.5" />
-                        <span>Stop Camera</span>
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      onClick={handleSimulateScan}
-                      className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg border border-emerald-300 bg-emerald-50 text-xs font-semibold text-emerald-800 hover:bg-emerald-100"
-                    >
-                      <QrCode className="w-3.5 h-3.5" />
-                      <span>Simulate QR Scan (Instant Detection)</span>
-                    </button>
-                  </div>
+                  {cameraActive && (
+                    <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center">
+                      <div className="w-56 h-56 border-2 border-emerald-400/80 rounded-2xl relative overflow-hidden shadow-2xl">
+                        {/* Animated Laser Scanning Line */}
+                        <motion.div
+                          animate={{ y: [0, 210, 0] }}
+                          transition={{ repeat: Infinity, duration: 2.2, ease: 'easeInOut' }}
+                          className="w-full h-0.5 bg-gradient-to-r from-transparent via-emerald-400 to-transparent shadow-[0_0_12px_#34d399]"
+                        />
+                        <div className="absolute top-2 left-2 w-3 h-3 border-t-2 border-l-2 border-emerald-400" />
+                        <div className="absolute top-2 right-2 w-3 h-3 border-t-2 border-r-2 border-emerald-400" />
+                        <div className="absolute bottom-2 left-2 w-3 h-3 border-b-2 border-l-2 border-emerald-400" />
+                        <div className="absolute bottom-2 right-2 w-3 h-3 border-b-2 border-r-2 border-emerald-400" />
+                      </div>
+                      <span className="mt-3 px-3 py-1 rounded-full bg-black/75 text-emerald-300 text-[11px] font-medium tracking-wide flex items-center gap-1.5 backdrop-blur-xs">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+                        Align Farmer QR Pass inside frame
+                      </span>
+                    </div>
+                  )}
                 </div>
-              )}
 
-              {/* Manual Identifier Mode */}
-              {qrMode === 'manual' && (
-                <div className="max-w-md space-y-3">
-                  <label className="block text-xs font-semibold text-slate-700">
-                    QR Identifier Number / Token
-                  </label>
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      value={manualQrInput}
-                      onChange={(e) => {
-                        setManualQrInput(e.target.value);
-                        setQrVerifiedSuccess(false);
+                {/* Verification Results Animated Banners (Visible ONLY when scanned) */}
+                <AnimatePresence mode="wait">
+                  {qrVerificationStatus === 'not_verified' && (
+                    <motion.div
+                      key="not_verified_banner"
+                      initial={{ opacity: 0, scale: 0.95, y: -6 }}
+                      animate={{
+                        opacity: 1,
+                        scale: 1,
+                        y: 0,
+                        x: [0, -8, 8, -6, 6, -3, 3, 0],
                       }}
-                      placeholder="e.g. SMP-2026-QR-XXXX or Token"
-                      className="flex-1 px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs text-slate-900 font-mono focus:ring-2 focus:ring-emerald-500"
-                    />
+                      exit={{ opacity: 0, scale: 0.95 }}
+                      transition={{ duration: 0.45 }}
+                      className="p-4 bg-red-50/90 border-2 border-red-500 rounded-xl space-y-3 shadow-xs"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2.5 text-red-900 font-bold text-sm">
+                          <div className="w-8 h-8 rounded-full bg-red-100 border border-red-300 flex items-center justify-center shrink-0">
+                            <XCircle className="w-5 h-5 text-red-600" />
+                          </div>
+                          <div>
+                            <span className="uppercase tracking-wide font-extrabold text-red-900">
+                              NOT VERIFIED — INVALID / WRONG QR CODE
+                            </span>
+                            <p className="text-[11px] font-normal text-red-700">
+                              The scanned code does not belong to this booking slot.
+                            </p>
+                          </div>
+                        </div>
+                        <span className="px-2.5 py-1 rounded-full bg-red-600 text-white font-bold text-[11px] uppercase tracking-wider shadow-xs">
+                          NOT VERIFIED
+                        </span>
+                      </div>
+
+                      <div className="p-3 bg-red-100/80 rounded-lg text-xs font-bold text-red-950 flex items-start gap-2 border border-red-300/80">
+                        <AlertTriangle className="w-4 h-4 text-red-700 shrink-0 mt-0.5" />
+                        <span>PROCUREMENT PROCESS STOPPED: Access is locked until the farmer's correct QR code is scanned.</span>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-2 pt-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setQrVerificationStatus('idle');
+                            setScannedQrCode(null);
+                            startCamera();
+                          }}
+                          className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-red-700 hover:bg-red-800 text-white text-xs font-semibold shadow-xs transition"
+                        >
+                          <Camera className="w-3.5 h-3.5" />
+                          <span>Scan Again with Camera</span>
+                        </button>
+                        <label className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-white border border-red-300 text-red-800 text-xs font-semibold hover:bg-red-50 cursor-pointer shadow-xs transition">
+                          <Upload className="w-3.5 h-3.5" />
+                          <span>Upload Another QR Photo</span>
+                          <input type="file" accept="image/*" onChange={handleQrFileUpload} className="hidden" />
+                        </label>
+                      </div>
+                    </motion.div>
+                  )}
+
+                  {qrVerificationStatus === 'verified' && (
+                    <motion.div
+                      key="verified_banner"
+                      initial={{ opacity: 0, scale: 0.94, y: -6 }}
+                      animate={{ opacity: 1, scale: 1, y: 0 }}
+                      exit={{ opacity: 0, scale: 0.94 }}
+                      transition={{ type: 'spring', damping: 22, stiffness: 350 }}
+                      className="p-4 bg-emerald-50/90 border-2 border-emerald-500 rounded-xl space-y-2.5 shadow-xs"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2.5 text-emerald-950 font-bold text-sm">
+                          <div className="w-8 h-8 rounded-full bg-emerald-100 border border-emerald-300 flex items-center justify-center shrink-0">
+                            <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                          </div>
+                          <div>
+                            <span className="uppercase tracking-wide font-extrabold text-emerald-950">
+                              VERIFIED — MATCH CONFIRMED
+                            </span>
+                            <p className="text-[11px] font-normal text-emerald-700">
+                              Physical gate arrival authenticated for Token <strong className="font-mono text-emerald-900">{request.token}</strong>.
+                            </p>
+                          </div>
+                        </div>
+                        <span className="px-2.5 py-1 rounded-full bg-emerald-600 text-white text-xs font-bold uppercase tracking-wider shadow-xs">
+                          VERIFIED ✓
+                        </span>
+                      </div>
+
+                      <div className="flex items-center justify-between text-xs text-emerald-800 pt-1">
+                        <span>Gate checkpoint cleared. Click below to proceed to Document Verification.</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setQrVerificationStatus('idle');
+                            setScannedQrCode(null);
+                            startCamera();
+                          }}
+                          className="text-[11px] font-semibold text-emerald-700 hover:text-emerald-900 underline"
+                        >
+                          Re-scan QR
+                        </button>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+
+                {/* Camera controls when active */}
+                {cameraActive && (
+                  <div className="flex items-center justify-center gap-2 pt-1">
                     <button
                       type="button"
-                      onClick={handleManualQrVerify}
-                      className="px-4 py-2 rounded-lg bg-slate-800 text-xs font-semibold text-white hover:bg-slate-700 shadow-xs"
+                      onClick={stopCamera}
+                      className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-300 transition"
                     >
-                      Verify Identifier
+                      <CameraOff className="w-3.5 h-3.5" />
+                      <span>Stop Camera</span>
                     </button>
+                    <label className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer shadow-xs transition">
+                      <Upload className="w-3.5 h-3.5 text-slate-500" />
+                      <span>Upload QR Image</span>
+                      <input type="file" accept="image/*" onChange={handleQrFileUpload} className="hidden" />
+                    </label>
                   </div>
-                  <p className="text-[11px] text-slate-400">
-                    Expected Farmer QR Identifier: <strong className="font-mono text-emerald-700">{request.qrIdentifier}</strong>
-                  </p>
-                </div>
-              )}
+                )}
+              </div>
 
               {/* Checkpoint Advance Button */}
               <div className="pt-4 border-t border-slate-100 flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <div
-                    className={`w-3 h-3 rounded-full ${
-                      qrVerifiedSuccess ? 'bg-emerald-500' : 'bg-slate-300'
+                    className={`w-3 h-3 rounded-full transition-colors ${
+                      qrVerifiedSuccess && qrVerificationStatus === 'verified'
+                        ? 'bg-emerald-500'
+                        : qrVerificationStatus === 'not_verified'
+                        ? 'bg-red-500 animate-pulse'
+                        : 'bg-slate-300'
                     }`}
                   />
                   <span className="text-xs font-semibold text-slate-700">
-                    {qrVerifiedSuccess ? 'QR Identity Verified ✓' : 'Awaiting QR Scan / Identifier Verification'}
+                    {qrVerifiedSuccess && qrVerificationStatus === 'verified'
+                      ? 'Gate Pass Verified ✓ (Ready to Proceed)'
+                      : qrVerificationStatus === 'not_verified'
+                      ? 'Procurement Stopped: Invalid QR Code ✗'
+                      : 'Awaiting QR Scan / Verification'}
                   </span>
                 </div>
 
                 <button
                   type="button"
-                  disabled={advancing || !qrVerifiedSuccess}
+                  disabled={advancing || !qrVerifiedSuccess || qrVerificationStatus !== 'verified'}
                   onClick={handleCompleteQrStep}
                   className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-600 text-xs font-bold text-white hover:bg-emerald-500 shadow-xs transition disabled:opacity-40 disabled:cursor-not-allowed"
                 >

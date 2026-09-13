@@ -6,6 +6,8 @@
 import { Crop, CropName, IndianState, StateCropPrice } from '../types';
 import { isSupabaseConfigured, supabase } from '../lib/supabase';
 
+export type { StateCropPrice };
+
 // Standard 5 foundational crops under government procurement
 const BASE_CROPS: Crop[] = [
   {
@@ -89,7 +91,17 @@ class CropService {
   notifyPriceUpdated(cropName: string, state: string, newPrice: number) {
     const cacheKey = `${state.toLowerCase()}::${cropName.toLowerCase()}`;
     this.priceCache.set(cacheKey, newPrice);
+
     if (typeof window !== 'undefined') {
+      try {
+        const storageKey = `smartprocure_custom_rates_${state.toLowerCase()}`;
+        const existing = JSON.parse(localStorage.getItem(storageKey) || '{}');
+        existing[cropName.toLowerCase()] = newPrice;
+        localStorage.setItem(storageKey, JSON.stringify(existing));
+      } catch (e) {
+        console.warn('Failed to persist price to localStorage:', e);
+      }
+
       window.dispatchEvent(
         new CustomEvent('smartprocure_price_updated', {
           detail: { cropName, state, newPrice },
@@ -100,7 +112,7 @@ class CropService {
 
   /**
    * Fetches the official crops supported under government procurement.
-   * Pulls from 'crops' PostgreSQL table in Supabase.
+   * Pulls from 'crops' PostgreSQL table in Supabase, falling back to BASE_CROPS.
    */
   async getCrops(): Promise<Crop[]> {
     if (isSupabaseConfigured()) {
@@ -116,7 +128,7 @@ class CropService {
             id: c.id,
             name: c.name as CropName,
             hindiName: c.hindi_name || '',
-            configuredRatePerQuintal: 2425, // State price is resolved dynamically per farmer state
+            configuredRatePerQuintal: 2425,
             unit: (c.standard_unit as any) || 'Quintal',
             season: (c.season as any) || 'Rabi',
             description: c.category ? `${c.category} crop for ${c.season || 'national'} procurement.` : undefined,
@@ -124,13 +136,12 @@ class CropService {
             lastUpdatedAt: c.updated_at || new Date().toISOString(),
           }));
         }
-        return [];
       } catch (err) {
-        console.warn('Supabase crop query caught error, returning empty list:', err);
-        return [];
+        console.warn('Supabase crop query caught error, using base crops:', err);
       }
     }
-    return [];
+    // Reliable fallback so crop selection is never blank
+    return BASE_CROPS;
   }
 
   /**
@@ -141,6 +152,19 @@ class CropService {
     const cacheKey = `${state.toLowerCase()}::${cropName.toLowerCase()}`;
     if (this.priceCache.has(cacheKey)) {
       return this.priceCache.get(cacheKey)!;
+    }
+
+    // Check localStorage custom rates
+    if (typeof window !== 'undefined') {
+      try {
+        const storageKey = `smartprocure_custom_rates_${state.toLowerCase()}`;
+        const stored = JSON.parse(localStorage.getItem(storageKey) || '{}');
+        if (stored[cropName.toLowerCase()] != null) {
+          const r = Number(stored[cropName.toLowerCase()]);
+          this.priceCache.set(cacheKey, r);
+          return r;
+        }
+      } catch {}
     }
 
     if (isSupabaseConfigured()) {
@@ -221,10 +245,23 @@ class CropService {
     }
 
     // Apply any local cached overrides
+    let storedRates: Record<string, number> = {};
+    if (typeof window !== 'undefined') {
+      try {
+        const storageKey = `smartprocure_custom_rates_${state.toLowerCase()}`;
+        storedRates = JSON.parse(localStorage.getItem(storageKey) || '{}');
+      } catch {}
+    }
+
     return result.map((p) => {
       const cacheKey = `${state.toLowerCase()}::${p.cropName.toLowerCase()}`;
       if (this.priceCache.has(cacheKey)) {
         return { ...p, ratePerQuintal: this.priceCache.get(cacheKey)! };
+      }
+      if (storedRates[p.cropName.toLowerCase()] != null) {
+        const r = Number(storedRates[p.cropName.toLowerCase()]);
+        this.priceCache.set(cacheKey, r);
+        return { ...p, ratePerQuintal: r };
       }
       return p;
     });

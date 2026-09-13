@@ -221,6 +221,7 @@ function mapDbBookingToUi(b: any, rateLookup?: number): ProcurementBooking {
     assignedDate: b.assigned_date || b.preferred_date,
     assignedStartTime: b.assigned_start_time || '09:00:00',
     assignedEndTime: b.assigned_end_time || '10:00:00',
+    bookingStatus: b.booking_status,
     workflowStatus: (b.booking_status?.toUpperCase() || 'BOOKED') as ProcurementWorkflowStatus,
     // Real queue metrics start at 0 / neutral until physical gate check-in
     queuePosition: 0,

@@ -175,7 +175,7 @@ export const Login: React.FC = () => {
                   <div>
                     <p className="font-bold">Email Verification Required</p>
                     <p className="text-xs text-amber-800 mt-0.5">
-                      Please verify your email before logging in. A 6-digit verification code was sent to <strong>{email}</strong> from <em>smartprocurementsystem@gmail.com</em>.
+                      Please verify your email before logging in. A 6-digit verification code was sent to <strong>{email}</strong> from <em>noreply@mail.app.supabase.io</em> or <em>smartprocurementsystem@gmail.com</em>. Check Spam if missing.
                     </p>
                   </div>
                 </div>

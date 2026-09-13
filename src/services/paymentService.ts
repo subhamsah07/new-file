@@ -104,39 +104,108 @@ class PaymentService {
     if (!isSupabaseConfigured() || !bookingId) return null;
 
     try {
-      // First find the procurement request ID for this booking
+      let actualBookingId = bookingId;
+      // If bookingId looks like a token instead of a UUID, resolve it to the booking id
+      if (!bookingId.includes('-')) {
+        const { data: bRow } = await supabase
+          .from('bookings')
+          .select('id')
+          .eq('token', bookingId)
+          .maybeSingle();
+        if (bRow?.id) {
+          actualBookingId = bRow.id;
+        }
+      }
+
+      // First find the procurement request for this booking
       const { data: pr, error: prErr } = await supabase
         .from('procurement_requests')
-        .select('id')
-        .eq('booking_id', bookingId)
+        .select('id, status, final_value, estimated_value, farmer_id, updated_at')
+        .eq('booking_id', actualBookingId)
         .maybeSingle();
 
-      if (prErr || !pr) {
-        return null;
+      if (prErr) {
+        console.warn('Procurement request query notice:', prErr);
       }
 
-      const { data, error } = await supabase
-        .from('payments')
-        .select('*')
-        .eq('procurement_request_id', pr.id)
-        .maybeSingle();
+      let paymentData: any = null;
+      if (pr?.id) {
+        const { data, error } = await supabase
+          .from('payments')
+          .select('*')
+          .eq('procurement_request_id', pr.id)
+          .maybeSingle();
 
-      if (error || !data) {
-        return null;
+        if (!error && data) {
+          paymentData = data;
+        }
       }
 
-      return {
-        id: data.id,
-        procurementRequestId: data.procurement_request_id,
-        farmerId: data.farmer_id,
-        amount: Number(data.amount) || 0,
-        paymentStatus: data.payment_status as PaymentStatus,
-        paymentReference: data.payment_reference,
-        processedBy: data.processed_by,
-        processedAt: data.processed_at,
-        createdAt: data.created_at,
-        updatedAt: data.updated_at,
-      };
+      // If no payment row by pr.id, check by farmer_id
+      if (!paymentData && pr?.farmer_id) {
+        const { data: farmerPayments } = await supabase
+          .from('payments')
+          .select('*')
+          .eq('farmer_id', pr.farmer_id)
+          .order('created_at', { ascending: false })
+          .limit(1);
+
+        if (farmerPayments && farmerPayments.length > 0) {
+          paymentData = farmerPayments[0];
+        }
+      }
+
+      const isPrCompleted = pr?.status === 'payment_completed';
+
+      if (paymentData) {
+        const effectiveStatus: PaymentStatus =
+          isPrCompleted || paymentData.payment_status === 'completed'
+            ? 'completed'
+            : (paymentData.payment_status as PaymentStatus);
+
+        // If procurement is completed but payment record has older status, sync it in background
+        if (isPrCompleted && paymentData.payment_status !== 'completed') {
+          supabase
+            .from('payments')
+            .update({
+              payment_status: 'completed',
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', paymentData.id)
+            .then(() => {});
+        }
+
+        return {
+          id: paymentData.id,
+          procurementRequestId: paymentData.procurement_request_id || pr?.id || '',
+          farmerId: paymentData.farmer_id || pr?.farmer_id || '',
+          amount: Number(paymentData.amount) || Number(pr?.final_value) || Number(pr?.estimated_value) || 0,
+          paymentStatus: effectiveStatus,
+          paymentReference: paymentData.payment_reference || (effectiveStatus === 'completed' ? `DBT-MSP-${paymentData.id.slice(-8)}` : null),
+          processedBy: paymentData.processed_by,
+          processedAt: paymentData.processed_at || (effectiveStatus === 'completed' ? (pr?.updated_at || new Date().toISOString()) : null),
+          createdAt: paymentData.created_at,
+          updatedAt: paymentData.updated_at,
+        };
+      }
+
+      // If procurement request is completed by admin but payment row not yet created
+      if (isPrCompleted && pr) {
+        return {
+          id: `pay-${pr.id}`,
+          procurementRequestId: pr.id,
+          farmerId: pr.farmer_id,
+          amount: Number(pr.final_value) || Number(pr.estimated_value) || 0,
+          paymentStatus: 'completed',
+          paymentReference: `DBT-MSP-${pr.id.slice(-8)}`,
+          processedBy: null,
+          processedAt: pr.updated_at || new Date().toISOString(),
+          createdAt: pr.updated_at || new Date().toISOString(),
+          updatedAt: pr.updated_at || new Date().toISOString(),
+        };
+      }
+
+      return null;
     } catch (err) {
       console.warn('Error fetching payment for booking:', err);
       return null;

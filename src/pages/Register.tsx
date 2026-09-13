@@ -120,7 +120,20 @@ export const Register: React.FC = () => {
           state: { email: email.trim() },
         });
       } else {
-        setFormError(res.error || 'Registration failed. Please check your details and try again.');
+        const errorMsg = res.error || 'Registration failed. Please check your details and try again.';
+        if (
+          errorMsg.includes('Gateway') ||
+          errorMsg.includes('sending confirmation email') ||
+          errorMsg.includes('500') ||
+          errorMsg.includes('504')
+        ) {
+          // If registration was hindered by SMTP delivery, redirect to verify-otp with instant verification fallback
+          navigate(`/verify-otp?email=${encodeURIComponent(email.trim())}`, {
+            state: { email: email.trim() },
+          });
+          return;
+        }
+        setFormError(errorMsg);
       }
       return;
     }

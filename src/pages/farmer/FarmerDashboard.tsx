@@ -12,18 +12,21 @@ import {
   ArrowRight,
   Loader2,
   RefreshCw,
+  TrendingUp,
+  Tag,
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { Button } from '../../components/ui/Button';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTranslation } from 'react-i18next';
-import { FarmerProfile, ProcurementBooking } from '../../types';
+import { FarmerProfile, ProcurementBooking, ProcurementWorkflowStatus } from '../../types';
 import { farmerService } from '../../services/farmerService';
 import { bookingService } from '../../services/bookingService';
 import { queueService, FarmerLiveTelemetry } from '../../services/queueService';
 import { paymentService, PaymentRecord } from '../../services/paymentService';
 import { procurementService, ProcurementRequestDetails } from '../../services/procurementService';
 import { notificationService } from '../../services/notificationService';
+import { cropService, StateCropPrice } from '../../services/cropService';
 import { isSupabaseConfigured, supabase } from '../../lib/supabase';
 
 export const FarmerDashboard: React.FC = () => {
@@ -43,6 +46,10 @@ export const FarmerDashboard: React.FC = () => {
   // Payment & Procurement Details State
   const [payment, setPayment] = React.useState<PaymentRecord | null>(null);
   const [procurementRequest, setProcurementRequest] = React.useState<ProcurementRequestDetails | null>(null);
+
+  // Live Crop MSP Rate State
+  const [liveCropRate, setLiveCropRate] = React.useState<number | null>(null);
+  const [stateMspPrices, setStateMspPrices] = React.useState<StateCropPrice[]>([]);
 
   // Token copy feedback
   const [tokenCopied, setTokenCopied] = React.useState(false);
@@ -112,6 +119,47 @@ export const FarmerDashboard: React.FC = () => {
   React.useEffect(() => {
     loadActiveBooking();
   }, [loadActiveBooking, user?.id]);
+
+  // Dynamic Crop MSP Rate & State Schedule sync
+  const farmerState = (farmerProfile?.state || authProfile?.state || (user?.user_metadata?.state as string) || 'Punjab') as any;
+
+  React.useEffect(() => {
+    let active = true;
+
+    const fetchMspSchedule = async () => {
+      try {
+        const prices = await cropService.getActivePricesForState(farmerState);
+        if (active) setStateMspPrices(prices);
+        if (booking?.cropName) {
+          const rate = await cropService.getCropPriceByState(booking.cropName as any, farmerState);
+          if (active) setLiveCropRate(rate);
+        }
+      } catch (err) {
+        console.warn('Error fetching crop pricing in FarmerDashboard:', err);
+      }
+    };
+
+    fetchMspSchedule();
+
+    const handlePriceUpdated = (e: any) => {
+      const detail = e.detail;
+      if (!detail) return;
+      if (detail.state.toLowerCase() === String(farmerState).toLowerCase()) {
+        if (booking?.cropName && detail.cropName.toLowerCase() === booking.cropName.toLowerCase()) {
+          setLiveCropRate(detail.newPrice);
+        }
+        cropService.getActivePricesForState(farmerState).then((p) => {
+          if (active) setStateMspPrices(p);
+        });
+      }
+    };
+
+    window.addEventListener('smartprocure_price_updated', handlePriceUpdated);
+    return () => {
+      active = false;
+      window.removeEventListener('smartprocure_price_updated', handlePriceUpdated);
+    };
+  }, [farmerState, booking?.cropName]);
 
   // 3. Stable references for subscription lifecycle
   const centreId = booking?.centreId;
@@ -202,21 +250,22 @@ export const FarmerDashboard: React.FC = () => {
         if (isSupabaseConfigured() && currentBooking.id) {
           const { data: bRow } = await supabase
             .from('bookings')
-            .select('booking_status, workflow_status')
+            .select('booking_status')
             .eq('id', currentBooking.id)
             .maybeSingle();
 
           if (bRow) {
             setBooking((prev) => {
               if (!prev) return prev;
+              const newWorkflowStatus = (bRow.booking_status?.toUpperCase() || 'BOOKED') as ProcurementWorkflowStatus;
               if (
                 prev.bookingStatus !== bRow.booking_status ||
-                prev.workflowStatus !== bRow.workflow_status
+                prev.workflowStatus !== newWorkflowStatus
               ) {
                 return {
                   ...prev,
                   bookingStatus: bRow.booking_status,
-                  workflowStatus: bRow.workflow_status,
+                  workflowStatus: newWorkflowStatus,
                 };
               }
               return prev;
@@ -305,6 +354,9 @@ export const FarmerDashboard: React.FC = () => {
               procurementService.getRequestByBookingId(bookingRef.current.id).then((pr) => {
                 if (pr) setProcurementRequest(pr);
               });
+              paymentService.getPaymentForBooking(bookingRef.current.id).then((p) => {
+                if (p) setPayment(p);
+              });
             }
           }
         );
@@ -319,8 +371,24 @@ export const FarmerDashboard: React.FC = () => {
       handleRealtimeUpdate();
     });
 
-    // Step 5: Clean up subscription on unmount or when centre/farmer ID changes
+    // Step 5: Background interval check to ensure payment/procurement state from admin is synced
+    const pollInterval = setInterval(() => {
+      if (bookingRef.current?.id) {
+        Promise.all([
+          paymentService.getPaymentForBooking(bookingRef.current.id),
+          procurementService.getRequestByBookingId(bookingRef.current.id),
+        ])
+          .then(([p, pr]) => {
+            if (p) setPayment(p);
+            if (pr) setProcurementRequest(pr);
+          })
+          .catch(() => {});
+      }
+    }, 5000);
+
+    // Step 6: Clean up subscription on unmount or when centre/farmer ID changes
     return () => {
+      clearInterval(pollInterval);
       if (channel && isSupabaseConfigured()) {
         try {
           supabase.removeChannel(channel);
@@ -390,17 +458,19 @@ export const FarmerDashboard: React.FC = () => {
     }
   }, [booking]);
 
+  // Effective Rate per Quintal (State MSP rate prioritized)
+  const effectiveCropRate = liveCropRate || procurementRequest?.verifiedRate || procurementRequest?.configuredRate || booking?.ratePerQuintal || 2425;
+
   // Estimated crop price (simplified per Section 13: Estimated Price ₹XX,XXX)
   const estimatedPriceAmount = React.useMemo(() => {
     if (payment?.amount) return payment.amount;
     if (procurementRequest?.finalValue) return procurementRequest.finalValue;
     if (procurementRequest?.estimatedValue) return procurementRequest.estimatedValue;
     if (booking) {
-      const rate = booking.ratePerQuintal || 2425;
-      return booking.quantityQuintals * rate;
+      return booking.quantityQuintals * effectiveCropRate;
     }
     return 0;
-  }, [payment, procurementRequest, booking]);
+  }, [payment, procurementRequest, booking, effectiveCropRate]);
 
   // QR Code value
   const qrValue = React.useMemo(() => {
@@ -441,8 +511,31 @@ export const FarmerDashboard: React.FC = () => {
     ];
   }, [currentStatus, booking?.bookingStatus, t]);
 
-  // Payment badge rendering per Section 12
-  const paymentStatus = payment?.paymentStatus || (currentStatus === 'COMPLETED' ? 'processing' : 'pending');
+  // Payment badge rendering - strictly synchronized with Admin completion state
+  const paymentStatus: 'completed' | 'processing' | 'pending' | 'failed' = React.useMemo(() => {
+    // 1. Explicit payment record status completed OR admin marked procurement request payment_completed
+    if (payment?.paymentStatus === 'completed' || procurementRequest?.status === 'payment_completed') {
+      return 'completed';
+    }
+    // 2. Failed payment status
+    if (payment?.paymentStatus === 'failed') {
+      return 'failed';
+    }
+    // 3. Explicit processing status from payment record or procurement workflow
+    if (payment?.paymentStatus === 'processing' || procurementRequest?.status === 'payment_processing') {
+      return 'processing';
+    }
+    // 4. Procurement weighment & MSP rate certified, waiting for DBT payment disbursement from admin
+    if (procurementRequest?.status === 'procurement_completed') {
+      return 'processing';
+    }
+    // 5. If booking or live telemetry indicates completed intake, payment is processing untill admin completes it
+    if (currentStatus === 'COMPLETED' || booking?.bookingStatus === 'completed' || booking?.workflowStatus === 'COMPLETED') {
+      return 'processing';
+    }
+    // 6. Default to payment status or pending
+    return payment?.paymentStatus || 'pending';
+  }, [payment?.paymentStatus, procurementRequest?.status, currentStatus, booking?.bookingStatus, booking?.workflowStatus]);
 
   return (
     <div className="space-y-6 max-w-4xl mx-auto">
@@ -531,9 +624,15 @@ export const FarmerDashboard: React.FC = () => {
               <div className="space-y-3 flex-1 min-w-0">
                 <div>
                   <span className="text-xs text-slate-500 dark:text-slate-400 block">{t('dashboard.crop', 'Crop')}</span>
-                  <span className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white">
-                    {booking.cropName}
-                  </span>
+                  <div className="flex items-baseline gap-2 flex-wrap">
+                    <span className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white">
+                      {booking.cropName}
+                    </span>
+                    <span className="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                      <Tag className="w-3 h-3" />
+                      ₹{effectiveCropRate.toLocaleString('en-IN')}/Qtl (MSP)
+                    </span>
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
@@ -560,9 +659,14 @@ export const FarmerDashboard: React.FC = () => {
                     <span className="text-xs text-slate-500 dark:text-slate-400 block">
                       {t('dashboard.estimatedPrice', 'Estimated Price')}
                     </span>
-                    <span className="text-lg font-black text-orange-500 block mt-0.5">
-                      ₹{estimatedPriceAmount.toLocaleString('en-IN')}
-                    </span>
+                    <div className="flex items-baseline gap-2 flex-wrap mt-0.5">
+                      <span className="text-lg sm:text-xl font-black text-orange-500 block">
+                        ₹{estimatedPriceAmount.toLocaleString('en-IN')}
+                      </span>
+                      <span className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">
+                        ({booking.quantityQuintals} Quintals × ₹{effectiveCropRate.toLocaleString('en-IN')})
+                      </span>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -879,11 +983,11 @@ export const FarmerDashboard: React.FC = () => {
                   ₹{estimatedPriceAmount.toLocaleString('en-IN')}
                 </span>
               </div>
-              {payment?.paymentReference && (
+              {(payment?.paymentReference || (paymentStatus === 'completed' && (booking?.paymentReferenceId || (procurementRequest?.id ? `DBT-MSP-${procurementRequest.id.slice(-8)}` : null)))) && (
                 <div className="text-xs text-slate-500 dark:text-slate-400 sm:text-right">
                   <span>Reference: </span>
                   <span className="font-mono text-slate-700 dark:text-slate-300">
-                    {payment.paymentReference}
+                    {payment?.paymentReference || booking?.paymentReferenceId || `DBT-MSP-${(procurementRequest?.id || booking?.id || '').slice(-8)}`}
                   </span>
                 </div>
               )}

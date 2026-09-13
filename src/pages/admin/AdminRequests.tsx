@@ -262,21 +262,48 @@ export const AdminRequests: React.FC = () => {
                     </td>
 
                     <td className="py-3.5 px-4">
-                      <span
-                        className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold uppercase ${
-                          req.workflowStatus === 'payment_completed' || req.workflowStatus === 'procurement_completed'
-                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                            : req.workflowStatus === 'weight_rate_verification' || req.workflowStatus === 'payment_processing'
-                            ? 'bg-blue-50 text-blue-700 border border-blue-200'
-                            : req.workflowStatus === 'document_verification' || req.workflowStatus === 'qr_verified'
-                            ? 'bg-purple-50 text-purple-700 border border-purple-200'
-                            : req.bookingStatus === 'cancelled'
-                            ? 'bg-red-50 text-red-700 border border-red-200'
-                            : 'bg-amber-50 text-amber-700 border border-amber-200'
-                        }`}
-                      >
-                        {req.workflowStatus.replace(/_/g, ' ')}
-                      </span>
+                      {(() => {
+                        const isProcurementCompleted =
+                          req.bookingStatus === 'completed' ||
+                          req.workflowStatus === 'procurement_completed' ||
+                          req.workflowStatus === 'payment_processing' ||
+                          req.workflowStatus === 'payment_completed';
+
+                        const isPaymentDone =
+                          req.paymentStatus === 'completed' ||
+                          req.workflowStatus === 'payment_completed';
+
+                        if (isProcurementCompleted) {
+                          if (isPaymentDone) {
+                            return (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-emerald-100 text-emerald-900 border border-emerald-300">
+                                Completed
+                              </span>
+                            );
+                          }
+                          return (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-amber-100 text-amber-900 border border-amber-300">
+                              Payment Pending
+                            </span>
+                          );
+                        }
+
+                        return (
+                          <span
+                            className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold uppercase ${
+                              req.workflowStatus === 'weight_rate_verification' || req.workflowStatus === 'payment_processing'
+                                ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                                : req.workflowStatus === 'document_verification' || req.workflowStatus === 'qr_verified'
+                                ? 'bg-purple-50 text-purple-700 border border-purple-200'
+                                : req.bookingStatus === 'cancelled'
+                                ? 'bg-red-50 text-red-700 border border-red-200'
+                                : 'bg-amber-50 text-amber-700 border border-amber-200'
+                            }`}
+                          >
+                            {req.workflowStatus.replace(/_/g, ' ')}
+                          </span>
+                        );
+                      })()}
                     </td>
 
                     <td className="py-3.5 px-4">

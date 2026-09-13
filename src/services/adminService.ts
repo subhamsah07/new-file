@@ -819,18 +819,33 @@ class AdminService {
     const qty = params.verifiedQuantity || pr.verified_quantity || pr.submitted_quantity || 0;
 
     if (params.newStatus === 'procurement_completed' || params.newStatus === 'payment_processing') {
-      // Upsert payment as 'pending'
+      // Manage payment as pending / processing
       if (finalVal > 0) {
-        await supabase.from('payments').upsert(
-          {
+        const { data: existingPay } = await supabase
+          .from('payments')
+          .select('id')
+          .eq('procurement_request_id', pr.id)
+          .maybeSingle();
+
+        if (existingPay?.id) {
+          await supabase
+            .from('payments')
+            .update({
+              amount: finalVal,
+              payment_status: params.newStatus === 'payment_processing' ? 'processing' : 'pending',
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', existingPay.id);
+        } else {
+          await supabase.from('payments').insert({
             procurement_request_id: pr.id,
             farmer_id: pr.farmer_id,
             amount: finalVal,
-            payment_status: 'pending',
+            payment_status: params.newStatus === 'payment_processing' ? 'processing' : 'pending',
+            created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
-          },
-          { onConflict: 'procurement_request_id' }
-        );
+          });
+        }
       }
 
       await supabase.from('notifications').insert({
@@ -845,8 +860,26 @@ class AdminService {
       const ref = params.paymentReference || `DBT-MSP-${Date.now().toString().slice(-8)}`;
 
       // Update payment record to completed
-      await supabase.from('payments').upsert(
-        {
+      const { data: existingPay } = await supabase
+        .from('payments')
+        .select('id')
+        .eq('procurement_request_id', pr.id)
+        .maybeSingle();
+
+      if (existingPay?.id) {
+        await supabase
+          .from('payments')
+          .update({
+            amount: finalVal,
+            payment_status: 'completed',
+            payment_reference: ref,
+            processed_by: user?.id || null,
+            processed_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', existingPay.id);
+      } else {
+        await supabase.from('payments').insert({
           procurement_request_id: pr.id,
           farmer_id: pr.farmer_id,
           amount: finalVal,
@@ -854,10 +887,10 @@ class AdminService {
           payment_reference: ref,
           processed_by: user?.id || null,
           processed_at: new Date().toISOString(),
+          created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
-        },
-        { onConflict: 'procurement_request_id' }
-      );
+        });
+      }
 
       // Send explicit completion notification with rate and credited confirmation
       await supabase.from('notifications').insert({
@@ -1136,43 +1169,62 @@ class AdminService {
    * Retrieves state-isolated crop prices for ONLY the admin's state.
    */
   async getCropPricesByState(state: string): Promise<AdminCropPriceItem[]> {
-    if (!isSupabaseConfigured()) return [];
+    let items: AdminCropPriceItem[] = [];
 
-    const { data, error } = await supabase
-      .from('crop_prices')
-      .select(`
-        id,
-        crop_id,
-        state,
-        rate,
-        unit,
-        effective_from,
-        effective_until,
-        active,
-        created_at,
-        crops ( name, hindi_name )
-      `)
-      .eq('state', state)
-      .order('effective_from', { ascending: false });
+    if (isSupabaseConfigured()) {
+      const { data, error } = await supabase
+        .from('crop_prices')
+        .select(`
+          id,
+          crop_id,
+          state,
+          rate,
+          unit,
+          effective_from,
+          effective_until,
+          active,
+          created_at,
+          crops ( name, hindi_name )
+        `)
+        .eq('state', state)
+        .order('effective_from', { ascending: false });
 
-    if (error || !data) {
-      console.warn('Error fetching crop prices:', error);
-      return [];
+      if (!error && data && data.length > 0) {
+        items = data.map((cp: any) => ({
+          id: cp.id,
+          cropId: cp.crop_id,
+          cropName: cp.crops?.name || 'Crop',
+          hindiName: cp.crops?.hindi_name || null,
+          state: cp.state,
+          rate: Number(cp.rate),
+          unit: cp.unit,
+          effectiveFrom: cp.effective_from,
+          effectiveUntil: cp.effective_until,
+          active: cp.active,
+          createdAt: cp.created_at,
+        }));
+      }
     }
 
-    return data.map((cp: any) => ({
-      id: cp.id,
-      cropId: cp.crop_id,
-      cropName: cp.crops?.name || 'Crop',
-      hindiName: cp.crops?.hindi_name || null,
-      state: cp.state,
-      rate: Number(cp.rate),
-      unit: cp.unit,
-      effectiveFrom: cp.effective_from,
-      effectiveUntil: cp.effective_until,
-      active: cp.active,
-      createdAt: cp.created_at,
-    }));
+    // Fallback: If database has no records yet for this state, populate using statutory benchmark matrix
+    if (items.length === 0) {
+      const activeStatePrices = await cropService.getActivePricesForState(state as any);
+      items = activeStatePrices.map((ap) => ({
+        id: ap.id,
+        cropId: ap.cropId,
+        cropName: ap.cropName,
+        hindiName: ap.hindiName || null,
+        state: ap.state,
+        rate: ap.ratePerQuintal,
+        unit: ap.unit,
+        effectiveFrom: ap.effectiveFrom,
+        effectiveUntil: null,
+        active: ap.active,
+        createdAt: new Date().toISOString(),
+      }));
+    }
+
+    return items;
   }
 
   /**
@@ -1184,10 +1236,6 @@ class AdminService {
     rate: number;
     effectiveFrom: string;
   }): Promise<{ success: boolean; error?: string }> {
-    if (!isSupabaseConfigured()) {
-      return { success: false, error: 'Database not connected' };
-    }
-
     try {
       const admin = await this.getCurrentAdmin();
       if (!admin || admin.state !== params.state) {
@@ -1197,29 +1245,54 @@ class AdminService {
         };
       }
 
-      const { error } = await supabase.from('crop_prices').upsert({
-        crop_id: params.cropId,
-        state: params.state,
-        rate: params.rate,
-        effective_from: params.effectiveFrom,
-        active: true,
-        created_by_admin: admin.id,
-      });
-
-      if (error) {
-        return { success: false, error: error.message };
+      // 1. Resolve crop name
+      let resolvedCropName = 'Wheat';
+      const allCrops = await cropService.getCrops();
+      const matchedCrop = allCrops.find(
+        (c) => c.id === params.cropId || c.name.toLowerCase() === params.cropId.toLowerCase()
+      );
+      if (matchedCrop) {
+        resolvedCropName = matchedCrop.name;
       }
 
-      // Automatically notify cropService so that any farmer in this state has crop prices immediately revised
-      const { data: cRow } = await supabase
-        .from('crops')
-        .select('name')
-        .eq('id', params.cropId)
-        .maybeSingle();
+      // 2. Persist in Supabase if configured
+      if (isSupabaseConfigured()) {
+        try {
+          const { data: existingRows } = await supabase
+            .from('crop_prices')
+            .select('id')
+            .eq('crop_id', params.cropId)
+            .eq('state', params.state)
+            .limit(1);
 
-      if (cRow?.name) {
-        cropService.notifyPriceUpdated(params.state, cRow.name, params.rate);
+          if (existingRows && existingRows.length > 0) {
+            await supabase
+              .from('crop_prices')
+              .update({
+                rate: params.rate,
+                effective_from: params.effectiveFrom,
+                active: true,
+                updated_at: new Date().toISOString(),
+              })
+              .eq('id', existingRows[0].id);
+          } else {
+            await supabase.from('crop_prices').insert({
+              crop_id: params.cropId,
+              state: params.state,
+              rate: params.rate,
+              effective_from: params.effectiveFrom,
+              active: true,
+              created_by_admin: admin.id,
+              created_at: new Date().toISOString(),
+            });
+          }
+        } catch (dbErr) {
+          console.warn('Supabase crop_prices write attempt, continuing with local store:', dbErr);
+        }
       }
+
+      // 3. Notify cropService with correct argument order: (cropName, state, newPrice)
+      cropService.notifyPriceUpdated(resolvedCropName, params.state, params.rate);
 
       return { success: true };
     } catch (err: any) {

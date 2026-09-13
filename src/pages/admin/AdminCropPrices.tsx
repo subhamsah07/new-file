@@ -1,6 +1,7 @@
 import * as React from 'react';
 import { useAdminAuth } from '../../contexts/AdminAuthContext';
 import { adminService } from '../../services/adminService';
+import { cropService } from '../../services/cropService';
 import { AdminCropPriceItem } from '../../types/admin';
 import { supabase } from '../../lib/supabase';
 import {
@@ -34,16 +35,15 @@ export const AdminCropPrices: React.FC = () => {
     if (!assignedState) return;
     setLoading(true);
     try {
-      const [prices, { data: cropsData }] = await Promise.all([
+      const [prices, cropsList] = await Promise.all([
         adminService.getCropPricesByState(assignedState),
-        supabase.from('crops').select('id, name, hindi_name').order('name'),
+        cropService.getCrops(),
       ]);
       setCropPrices(prices);
-      if (cropsData) {
-        setAllCrops(cropsData.map((c) => ({ id: c.id, name: c.name, hindiName: c.hindi_name })));
-        if (cropsData.length > 0 && !selectedCropId) {
-          setSelectedCropId(cropsData[0].id);
-        }
+      const mapped = cropsList.map((c) => ({ id: c.id, name: c.name, hindiName: c.hindiName }));
+      setAllCrops(mapped);
+      if (mapped.length > 0 && !selectedCropId) {
+        setSelectedCropId(mapped[0].id);
       }
     } catch (err) {
       console.error('Failed to load crop prices:', err);
